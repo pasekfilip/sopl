@@ -4,11 +4,7 @@ layout(set = 1, binding = 0) uniform Proj {
     mat4 proj;
 };
 
-layout(set = 1, binding = 1) uniform Model {
-    mat4 model;
-};
-
-layout(set = 1, binding = 2) uniform UvAnimation {
+layout(set = 1, binding = 1) uniform UvAnimation {
     vec2 scale;
     vec2 offset;
 };
@@ -21,7 +17,7 @@ layout(location = 0) out vec2 frag_uv;
 layout(location = 1) out vec4 frag_color;
 
 void main() {
-    gl_Position = proj * model * vec4(pos, 1);
+    gl_Position = proj * vec4(pos, 1);
     frag_uv = uv * scale + offset;
     frag_color = color;
 }

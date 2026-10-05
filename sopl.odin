@@ -1,5 +1,7 @@
 package sopl
 
+import "base:runtime"
+import "core:fmt"
 import "core:image"
 import _ "core:image/png"
 import "core:log"
@@ -11,9 +13,6 @@ import sdl "vendor:sdl3"
 State :: struct {
 	device:          ^sdl.GPUDevice,
 	window:          ^sdl.Window,
-	mesh:            Mesh,
-	render_pass:     ^sdl.GPURenderPass,
-	cmd_buf:         ^sdl.GPUCommandBuffer,
 	pipelines:       [Shader_Type]^sdl.GPUGraphicsPipeline,
 	last_tick:       time.Tick,
 	projection:      matrix[4, 4]f32,
@@ -21,6 +20,12 @@ State :: struct {
 	current_press:   #sparse[sdl.Scancode]bool,
 	default_texture: ^sdl.GPUTexture,
 	default_sampler: ^sdl.GPUSampler,
+	transfer_buf:    ^sdl.GPUTransferBuffer,
+	index_buffer:    ^sdl.GPUBuffer,
+	vertex_buffer:   ^sdl.GPUBuffer,
+	clear_color:     Color,
+
+	// draw_batch: [dynamic]
 }
 
 Physical_KeyCode :: sdl.Scancode
@@ -66,6 +71,13 @@ Rect :: struct {
 	x, y, width, height: f32,
 }
 
+Draw_Command :: struct {
+	texture:       ^sdl.GPUTexture,
+	pipeline_type: Shader_Type,
+	first_index:   u32,
+	index_count:   u32,
+}
+
 Vertex :: struct {
 	pos:   [3]f32,
 	uv:    [2]f32,
@@ -87,6 +99,19 @@ quad_vert := #load("shaders/spv_quad.vert")
 quad_frag := #load("shaders/spv_quad.frag")
 
 g: ^State
+batch_vertices: [dynamic; MAX_VERTICES]Vertex
+draw_commands: [dynamic; BATCH_QUAD_CAPACITY]Draw_Command
+TEMPLATE_VERTEX: [4]Vertex : {
+	{pos = {0, 1, 1}, uv = {0, 1}},
+	{pos = {1, 1, 1}, uv = {1, 1}},
+	{pos = {1, 0, 1}, uv = {1, 0}},
+	{pos = {0, 0, 1}, uv = {0, 0}},
+}
+
+BATCH_QUAD_CAPACITY :: 3000
+MAX_VERTICES :: BATCH_QUAD_CAPACITY * 4
+MAX_TRANSFER_BUFFER_SIZE :: MAX_VERTICES * size_of(Vertex)
+MAX_INDICES :: BATCH_QUAD_CAPACITY * 6
 
 init_window :: proc(title: cstring, width: u32, height: u32, mode := PresentMode.VSYNC) {
 	ensure(sdl.Init({.VIDEO}), string(sdl.GetError()))
@@ -94,19 +119,26 @@ init_window :: proc(title: cstring, width: u32, height: u32, mode := PresentMode
 	g = new(State)
 	g.window = sdl.CreateWindow(title, i32(width), i32(height), {})
 
+	g.clear_color = WHITE
 	g.device = sdl.CreateGPUDevice({.SPIRV}, ODIN_DEBUG, nil)
 	ensure(sdl.ClaimWindowForGPUDevice(g.device, g.window), string(sdl.GetError()))
 
+	g.transfer_buf = sdl.CreateGPUTransferBuffer(
+		g.device,
+		{usage = .UPLOAD, size = MAX_TRANSFER_BUFFER_SIZE},
+	)
 	g.default_texture = create_default_texture()
 	g.default_sampler = sdl.CreateGPUSampler(
 		g.device,
 		{min_filter = .NEAREST, mag_filter = .NEAREST, mipmap_mode = .NEAREST},
 	)
-	g.mesh = create_quad_mesh()
+	g.index_buffer = create_default_indices()
+	g.vertex_buffer = sdl.CreateGPUBuffer(
+		g.device,
+		{props = 0, size = u32(MAX_VERTICES), usage = {.VERTEX}},
+	)
 
-	for type in Shader_Type {
-		g.pipelines[type] = setup_pipeline(type)
-	}
+	for type in Shader_Type {g.pipelines[type] = setup_pipeline(type)}
 
 	g.projection = linalg.matrix_ortho3d_f32(0, f32(width), f32(height), 0, 0, 1, false)
 
@@ -159,11 +191,47 @@ create_default_texture :: proc() -> ^sdl.GPUTexture {
 	return texture
 }
 
+create_default_indices :: proc() -> ^sdl.GPUBuffer {
+	indices: [MAX_INDICES]u16
+	quad_pattern := [6]u16{0, 1, 2, 0, 2, 3}
+	for i := 0; i < len(indices); i += 1 {
+		index := u16(i / 6) * 4 + quad_pattern[i % 6]
+		indices[i] = index
+	}
+	indices_byte_size := len(indices) * size_of(indices[0])
+	index_buffer := sdl.CreateGPUBuffer(
+		g.device,
+		{props = 0, size = u32(indices_byte_size), usage = {.INDEX}},
+	)
+	transfer_buf := sdl.CreateGPUTransferBuffer(
+		g.device,
+		{usage = .UPLOAD, size = u32(indices_byte_size)},
+	)
+
+	transfer_mem := sdl.MapGPUTransferBuffer(g.device, transfer_buf, false)
+	mem.copy(transfer_mem, raw_data(&indices), indices_byte_size)
+	sdl.UnmapGPUTransferBuffer(g.device, transfer_buf)
+
+	copy_cmd_buf := sdl.AcquireGPUCommandBuffer(g.device)
+	copy_pass := sdl.BeginGPUCopyPass(copy_cmd_buf)
+
+	sdl.UploadToGPUBuffer(
+		copy_pass,
+		{transfer_buffer = transfer_buf},
+		{buffer = index_buffer, size = u32(indices_byte_size)},
+		false,
+	)
+	sdl.EndGPUCopyPass(copy_pass)
+	ensure(sdl.SubmitGPUCommandBuffer(copy_cmd_buf), string(sdl.GetError()))
+
+	sdl.ReleaseGPUTransferBuffer(g.device, transfer_buf)
+	return index_buffer
+}
+
 close_window :: proc() {
 	for pipeline in g.pipelines {
 		sdl.ReleaseGPUGraphicsPipeline(g.device, pipeline)
 	}
-	destroy_mesh(g.mesh)
 	sdl.DestroyGPUDevice(g.device)
 	sdl.DestroyWindow(g.window)
 	sdl.Quit()
@@ -203,10 +271,10 @@ get_delta_time :: proc() -> f32 {
 
 create_quad_mesh :: proc() -> Mesh {
 	vertices: []Vertex = {
-		{pos = {-0.5, -0.5, 1}, uv = {0, 1}, color = {30, 30, 0, 255}},
-		{pos = {0.5, -0.5, 1}, uv = {1, 1}, color = {30, 30, 0, 255}},
-		{pos = {0.5, 0.5, 1}, uv = {1, 0}, color = {30, 30, 0, 255}},
-		{pos = {-0.5, 0.5, 1}, uv = {0, 0}, color = {30, 30, 0, 255}},
+		{pos = {-0.5, -0.5, 1}, uv = {0, 1}, color = {0, 0, 0, 255}},
+		{pos = {0.5, -0.5, 1}, uv = {1, 1}, color = {0, 0, 0, 255}},
+		{pos = {0.5, 0.5, 1}, uv = {1, 0}, color = {0, 0, 0, 255}},
+		{pos = {-0.5, 0.5, 1}, uv = {0, 0}, color = {0, 0, 0, 255}},
 	}
 
 	indices: []u32 = {0, 1, 2, 0, 2, 3}
@@ -274,114 +342,174 @@ destroy_mesh :: proc(mesh: Mesh) {
 	sdl.ReleaseGPUBuffer(g.device, mesh.index_buffer)
 }
 
-begin_draw :: proc(color := WHITE) -> bool {
-	g.cmd_buf = sdl.AcquireGPUCommandBuffer(g.device)
+present :: proc() {
+	mem_ptr := sdl.MapGPUTransferBuffer(g.device, g.transfer_buf, true)
+	mem.copy(mem_ptr, raw_data(&batch_vertices), len(batch_vertices) * size_of(Vertex))
+	sdl.UnmapGPUTransferBuffer(g.device, g.transfer_buf)
+
+	cmd_buf := sdl.AcquireGPUCommandBuffer(g.device)
+	copy_pass := sdl.BeginGPUCopyPass(cmd_buf)
+
+	sdl.UploadToGPUBuffer(
+		copy_pass,
+		{transfer_buffer = g.transfer_buf},
+		{buffer = g.vertex_buffer, size = u32(len(batch_vertices) * size_of(Vertex))},
+		false,
+	)
+
+	sdl.EndGPUCopyPass(copy_pass)
+
 	swapchain_tex: ^sdl.GPUTexture
 	ensure(
-		sdl.WaitAndAcquireGPUSwapchainTexture(g.cmd_buf, g.window, &swapchain_tex, nil, nil),
+		sdl.WaitAndAcquireGPUSwapchainTexture(cmd_buf, g.window, &swapchain_tex, nil, nil),
 		string(sdl.GetError()),
 	)
-	if swapchain_tex == nil { 	// the window is minimaized
-		ensure(sdl.SubmitGPUCommandBuffer(g.cmd_buf), string(sdl.GetError()))
-		return false
+	if swapchain_tex == nil { 	// the window is minimaized (wayland not rly)
+		ensure(sdl.SubmitGPUCommandBuffer(cmd_buf), string(sdl.GetError()))
 	}
-
 	color_target := sdl.GPUColorTargetInfo {
 		texture     = swapchain_tex,
 		load_op     = .CLEAR,
-		clear_color = (sdl.FColor)(linalg.array_cast(color, f32) / 255),
+		clear_color = (sdl.FColor)(linalg.array_cast(g.clear_color, f32) / 255),
 		store_op    = .STORE,
 	}
 
-	g.render_pass = sdl.BeginGPURenderPass(g.cmd_buf, &color_target, 1, nil)
+	render_pass := sdl.BeginGPURenderPass(cmd_buf, &color_target, 1, nil)
+	sdl.BindGPUVertexBuffers(render_pass, 0, &(sdl.GPUBufferBinding{buffer = g.vertex_buffer}), 1)
+	sdl.BindGPUIndexBuffer(render_pass, {buffer = g.index_buffer}, ._16BIT)
+	sdl.PushGPUVertexUniformData(cmd_buf, 0, &g.projection, size_of(g.projection))
 
-	sdl.PushGPUVertexUniformData(g.cmd_buf, 0, &g.projection, size_of(g.projection))
-	return true
-}
+	for draw_command in draw_commands {
+		sdl.BindGPUGraphicsPipeline(render_pass, g.pipelines[draw_command.pipeline_type])
+		sdl.BindGPUFragmentSamplers(
+			render_pass,
+			0,
+			&(sdl.GPUTextureSamplerBinding {
+					sampler = g.default_sampler,
+					texture = draw_command.texture,
+				}),
+			1,
+		)
 
-end_draw :: proc() {
-	sdl.EndGPURenderPass(g.render_pass)
-	ensure(sdl.SubmitGPUCommandBuffer(g.cmd_buf), string(sdl.GetError()))
-}
-
-draw_texture :: proc(tex: ^Texture, source: Rect, destination: Rect, rotation: f32) {
-	sdl.BindGPUGraphicsPipeline(g.render_pass, g.pipelines[.Textured])
-	sdl.BindGPUVertexBuffers(
-		g.render_pass,
-		0,
-		&(sdl.GPUBufferBinding{buffer = g.mesh.vertex_buffer}),
-		1,
-	)
-	sdl.BindGPUIndexBuffer(g.render_pass, {buffer = g.mesh.index_buffer}, ._32BIT)
-	model_matrix :=
-		linalg.matrix4_translate_f32({destination.x, destination.y, 0}) *
-		linalg.matrix4_rotate_f32(rotation, {0, 0, 1}) *
-		linalg.matrix4_scale_f32({destination.width, destination.height, 1})
-	sdl.PushGPUVertexUniformData(g.cmd_buf, 1, &model_matrix, size_of(matrix[4, 4]f32))
-
-	Sprite_Offset :: struct {
-		scale:  [2]f32,
-		offset: [2]f32,
+		sdl.DrawGPUIndexedPrimitives(
+			render_pass,
+			draw_command.index_count,
+			1,
+			draw_command.first_index,
+			0,
+			0,
+		)
 	}
-	sprite_offset := &Sprite_Offset {
-		scale = {source.width / f32(tex.width), source.height / f32(tex.height)},
-		offset = {(source.x - min(source.width, 0)) / f32(tex.width), source.y / f32(tex.height)},
-	}
-	sdl.PushGPUVertexUniformData(g.cmd_buf, 2, sprite_offset, size_of(Sprite_Offset))
-	sdl.BindGPUFragmentSamplers(
-		g.render_pass,
-		0,
-		&(sdl.GPUTextureSamplerBinding{sampler = g.default_sampler, texture = tex.texture}),
-		1,
-	)
 
-	sdl.DrawGPUIndexedPrimitives(g.render_pass, g.mesh.num_indices, 1, 0, 0, 0)
+
+	sdl.EndGPURenderPass(render_pass)
+	ensure(sdl.SubmitGPUCommandBuffer(cmd_buf), string(sdl.GetError()))
+	draw_commands = {}
+	batch_vertices = {}
 }
+
+clear :: proc(color: Color) {
+	g.clear_color = color
+}
+
+// draw_texture :: proc(tex: ^Texture, source: Rect, destination: Rect, rotation: f32) {
+// 	sdl.BindGPUGraphicsPipeline(render_pass, g.pipelines[.Textured])
+// 	sdl.BindGPUVertexBuffers(
+// 		render_pass,
+// 		0,
+// 		&(sdl.GPUBufferBinding{buffer = g.mesh.vertex_buffer}),
+// 		1,
+// 	)
+// 	sdl.BindGPUIndexBuffer(render_pass, {buffer = g.mesh.index_buffer}, ._32BIT)
+// 	model_matrix :=
+// 		linalg.matrix4_translate_f32({destination.x, destination.y, 0}) *
+// 		linalg.matrix4_rotate_f32(rotation, {0, 0, 1}) *
+// 		linalg.matrix4_scale_f32({destination.width, destination.height, 1})
+// 	sdl.PushGPUVertexUniformData(g.cmd_buf, 1, &model_matrix, size_of(matrix[4, 4]f32))
+//
+// 	Sprite_Offset :: struct {
+// 		scale:  [2]f32,
+// 		offset: [2]f32,
+// 	}
+// 	sprite_offset := &Sprite_Offset {
+// 		scale = {source.width / f32(tex.width), source.height / f32(tex.height)},
+// 		offset = {(source.x - min(source.width, 0)) / f32(tex.width), source.y / f32(tex.height)},
+// 	}
+// 	sdl.PushGPUVertexUniformData(g.cmd_buf, 2, sprite_offset, size_of(Sprite_Offset))
+// 	sdl.BindGPUFragmentSamplers(
+// 		render_pass,
+// 		0,
+// 		&(sdl.GPUTextureSamplerBinding{sampler = g.default_sampler, texture = tex.texture}),
+// 		1,
+// 	)
+//
+// 	sdl.DrawGPUIndexedPrimitives(render_pass, g.mesh.num_indices, 1, 0, 0, 0)
+// }
+
 
 draw_rectangle :: proc(destination: Rect, color: Color, rotation: f32 = 0) {
-	sdl.BindGPUGraphicsPipeline(g.render_pass, g.pipelines[.Textured])
-	sdl.BindGPUVertexBuffers(
-		g.render_pass,
-		0,
-		&(sdl.GPUBufferBinding{buffer = g.mesh.vertex_buffer}),
-		1,
-	)
-	sdl.BindGPUIndexBuffer(g.render_pass, {buffer = g.mesh.index_buffer}, ._32BIT)
 	model_matrix :=
 		linalg.matrix4_translate_f32({destination.x, destination.y, 0}) *
 		linalg.matrix4_rotate_f32(rotation, {0, 0, 1}) *
 		linalg.matrix4_scale_f32({destination.width, destination.height, 1})
-	sdl.PushGPUVertexUniformData(g.cmd_buf, 1, &model_matrix, size_of(matrix[4, 4]f32))
 
-	sdl.BindGPUFragmentSamplers(
-		g.render_pass,
-		0,
-		&(sdl.GPUTextureSamplerBinding{sampler = g.default_sampler, texture = g.default_texture}),
-		1,
-	)
+	vertices := TEMPLATE_VERTEX
+	for &vertex, index in vertices {
+		vertex.color = color
+		vertex.pos = (model_matrix * [4]f32{vertex.pos.x, vertex.pos.y, vertex.pos.z, 1}).xyz
+		append(&batch_vertices, vertex)
+	}
 
-	sdl.DrawGPUIndexedPrimitives(g.render_pass, g.mesh.num_indices, 1, 0, 0, 0)
+	command_count := len(draw_commands)
+	if command_count == 0 {
+		append(
+			&draw_commands,
+			(Draw_Command) {
+				texture = g.default_texture,
+				pipeline_type = .Textured,
+				first_index = 0,
+				index_count = 6,
+			},
+		)
+		return
+	}
+
+	previous_command := &draw_commands[command_count - 1]
+	if previous_command.pipeline_type == .Textured &&
+	   previous_command.texture == g.default_texture {
+		previous_command.index_count += 6
+	} else {
+		append(
+			&draw_commands,
+			(Draw_Command) {
+				texture = g.default_texture,
+				pipeline_type = .Textured,
+				first_index = previous_command.index_count,
+				index_count = 6,
+			},
+		)
+	}
 }
 
-draw_rectangle_lines :: proc(destination: Rect, color: Color, rotation: f32) {
-	sdl.BindGPUGraphicsPipeline(g.render_pass, g.pipelines[.Wireframe])
-	sdl.BindGPUVertexBuffers(
-		g.render_pass,
-		0,
-		&(sdl.GPUBufferBinding{buffer = g.mesh.vertex_buffer}),
-		1,
-	)
-	sdl.BindGPUIndexBuffer(g.render_pass, {buffer = g.mesh.index_buffer}, ._32BIT)
-	model_matrix :=
-		linalg.matrix4_translate_f32({destination.x, destination.y, 0}) *
-		linalg.matrix4_rotate_f32(rotation, {0, 0, 1}) *
-		linalg.matrix4_scale_f32({destination.width, destination.height, 1})
-	sdl.PushGPUVertexUniformData(g.cmd_buf, 1, &model_matrix, size_of(matrix[4, 4]f32))
-	color := color
-	sdl.PushGPUFragmentUniformData(g.cmd_buf, 0, &color, size_of([4]f32))
-
-	sdl.DrawGPUIndexedPrimitives(g.render_pass, g.mesh.num_indices, 1, 0, 0, 0)
-}
+// draw_rectangle_lines :: proc(destination: Rect, color: Color, rotation: f32) {
+// 	sdl.BindGPUGraphicsPipeline(render_pass, g.pipelines[.Wireframe])
+// 	sdl.BindGPUVertexBuffers(
+// 		render_pass,
+// 		0,
+// 		&(sdl.GPUBufferBinding{buffer = g.mesh.vertex_buffer}),
+// 		1,
+// 	)
+// 	sdl.BindGPUIndexBuffer(render_pass, {buffer = g.mesh.index_buffer}, ._32BIT)
+// 	model_matrix :=
+// 		linalg.matrix4_translate_f32({destination.x, destination.y, 0}) *
+// 		linalg.matrix4_rotate_f32(rotation, {0, 0, 1}) *
+// 		linalg.matrix4_scale_f32({destination.width, destination.height, 1})
+// 	sdl.PushGPUVertexUniformData(g.cmd_buf, 1, &model_matrix, size_of(matrix[4, 4]f32))
+// 	color := color
+// 	sdl.PushGPUFragmentUniformData(g.cmd_buf, 0, &color, size_of([4]f32))
+//
+// 	sdl.DrawGPUIndexedPrimitives(render_pass, g.mesh.num_indices, 1, 0, 0, 0)
+// }
 
 load_texture :: proc(path: string) -> Texture {
 	img, err := image.load_from_file(path, {.alpha_add_if_missing})
@@ -462,7 +590,7 @@ setup_pipeline :: proc(shader_type: Shader_Type) -> ^sdl.GPUGraphicsPipeline {
 			g.device,
 			quad_vert,
 			.VERTEX,
-			num_uniform_buffers = 3,
+			num_uniform_buffers = 2,
 			num_samplers = 0,
 		)
 		frag_shader = load_shader(
@@ -481,7 +609,7 @@ setup_pipeline :: proc(shader_type: Shader_Type) -> ^sdl.GPUGraphicsPipeline {
 			g.device,
 			quad_vert,
 			.VERTEX,
-			num_uniform_buffers = 3,
+			num_uniform_buffers = 2,
 			num_samplers = 0,
 		)
 		frag_shader = load_shader(

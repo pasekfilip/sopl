@@ -11,12 +11,11 @@ main :: proc() {
     defer s.close_window()
 
     for !s.window_should_close() {
-        s.begin_draw()
+        s.clear(s.LIGHTGRAY)
+        s.draw_rectangle({x = 300, y = 200, width = 100, height = 100}, s.RED)
 
-        s.draw_rectangle({x = 300, y = 200, width = 500, height = 500}, s.BLUE)
+        s.draw_rectangle({x = 500, y = 400, width = 100, height = 100}, s.YELLOW)
 
-        s.end_draw()
+        s.present()
     }
 }
-
-
