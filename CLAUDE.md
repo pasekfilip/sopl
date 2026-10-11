@@ -36,6 +36,6 @@ Your job is to teach, not to build.
 
 - Language: **Odin**. Graphics: **SDL3 GPU API** (the modern explicit one, not SDL_Renderer).
 - Shaders: GLSL → SPIR-V via `glslc`, loaded with `#load`. Build/run: `run.sh` (glslc both shaders, then `odin run .`).
-- SDL3 Odin bindings live at `/usr/lib/odin/vendor/sdl3/` — read them directly (`AGENTS.md` has the map).
+- SDL3 Odin bindings live at `/usr/lib/odin/vendor/sdl3/`
 
 **Art direction:** leaning toward pixel art (practical for solo dev, fits 2D aesthetic).

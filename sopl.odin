@@ -1,6 +1,5 @@
 package sopl
 
-import "base:runtime"
 import "core:fmt"
 import "core:image"
 import _ "core:image/png"
@@ -24,8 +23,6 @@ State :: struct {
 	index_buffer:    ^sdl.GPUBuffer,
 	vertex_buffer:   ^sdl.GPUBuffer,
 	clear_color:     Color,
-
-	// draw_batch: [dynamic]
 }
 
 Physical_KeyCode :: sdl.Scancode
@@ -114,6 +111,7 @@ MAX_TRANSFER_BUFFER_SIZE :: MAX_VERTICES * size_of(Vertex)
 MAX_INDICES :: BATCH_QUAD_CAPACITY * 6
 
 init_window :: proc(title: cstring, width: u32, height: u32, mode := PresentMode.VSYNC) {
+    context.logger = log.create_console_logger()
 	ensure(sdl.Init({.VIDEO}), string(sdl.GetError()))
 
 	g = new(State)
@@ -121,6 +119,7 @@ init_window :: proc(title: cstring, width: u32, height: u32, mode := PresentMode
 
 	g.clear_color = WHITE
 	g.device = sdl.CreateGPUDevice({.SPIRV}, ODIN_DEBUG, nil)
+    log.error(sdl.GetError())
 	ensure(sdl.ClaimWindowForGPUDevice(g.device, g.window), string(sdl.GetError()))
 
 	g.transfer_buf = sdl.CreateGPUTransferBuffer(
@@ -446,6 +445,30 @@ clear :: proc(color: Color) {
 // 	sdl.DrawGPUIndexedPrimitives(render_pass, g.mesh.num_indices, 1, 0, 0, 0)
 // }
 
+// One segment is one quad
+draw_circle :: proc(position: [2]f32, r: f32, color: Color, segments := 4) {
+	model_matrix :=
+		linalg.matrix4_translate_f32({position.x, position.y, 0}) *
+		linalg.matrix4_scale_f32({r, r, 1})
+
+    // TODO: not the pretties sollution
+	rad: f32 = 0
+	for i in 0 ..< segments {
+        foo := Vertex{pos = {0, 0, 1}, uv = {0, 1}, color = color}
+        foo.pos = (model_matrix * [4]f32{foo.pos.x, foo.pos.y, foo.pos.z, 1}).xyz
+        append(&batch_vertices, foo)
+        rad -= linalg.PI / f32(segments)
+        for i in 0..<3 {
+            rad += linalg.PI / f32(segments)
+            vertex := Vertex{pos = {linalg.cos(rad), linalg.sin(rad), 1}, uv = {0, 1}, color = color}
+            vertex.pos = (model_matrix * [4]f32{vertex.pos.x, vertex.pos.y, vertex.pos.z, 1}).xyz
+            append(&batch_vertices, vertex)
+        }
+	}
+
+    add_draw_command(u32(6 * segments), .Textured)
+    
+}
 
 draw_rectangle :: proc(destination: Rect, color: Color, rotation: f32 = 0) {
 	model_matrix :=
@@ -460,35 +483,39 @@ draw_rectangle :: proc(destination: Rect, color: Color, rotation: f32 = 0) {
 		append(&batch_vertices, vertex)
 	}
 
-	command_count := len(draw_commands)
-	if command_count == 0 {
-		append(
-			&draw_commands,
-			(Draw_Command) {
-				texture = g.default_texture,
-				pipeline_type = .Textured,
-				first_index = 0,
-				index_count = 6,
-			},
-		)
-		return
-	}
+    add_draw_command(6, .Textured)
+}
 
-	previous_command := &draw_commands[command_count - 1]
-	if previous_command.pipeline_type == .Textured &&
-	   previous_command.texture == g.default_texture {
-		previous_command.index_count += 6
-	} else {
-		append(
-			&draw_commands,
-			(Draw_Command) {
-				texture = g.default_texture,
-				pipeline_type = .Textured,
-				first_index = previous_command.index_count,
-				index_count = 6,
-			},
-		)
-	}
+add_draw_command :: proc(index_count: u32, shader_type: Shader_Type) {
+    command_count := len(draw_commands)
+    if command_count == 0 {
+        append(
+            &draw_commands,
+            (Draw_Command) {
+                texture = g.default_texture,
+                pipeline_type = shader_type,
+                first_index = 0,
+                index_count = index_count,
+            },
+        )
+        return
+    }
+
+    previous_command := &draw_commands[command_count - 1]
+    if previous_command.pipeline_type == shader_type &&
+    previous_command.texture == g.default_texture {
+        previous_command.index_count += index_count
+    } else {
+        append(
+            &draw_commands,
+            (Draw_Command) {
+                texture = g.default_texture,
+                pipeline_type = shader_type,
+                first_index = previous_command.index_count,
+                index_count = index_count,
+            },
+        )
+    }
 }
 
 // draw_rectangle_lines :: proc(destination: Rect, color: Color, rotation: f32) {
