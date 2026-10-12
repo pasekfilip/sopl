@@ -1,21 +1,33 @@
 package platformer
 
-import _ "core:image/png"
+import "core:time"
 import s "../../"
+import _ "core:image/png"
 
 main :: proc() {
-    width :: 1920
-    height :: 1080
+	width :: 1920
+	height :: 1080
 
-    s.init_window("platformer", width, height)
-    defer s.close_window()
+	s.init_window("platformer", width, height)
+	defer s.close_window()
 
-    for !s.window_should_close() {
-        s.clear(s.DARKGRAY)
-        s.draw_circle({400, 400}, 100, s.WHITE)
-        s.draw_circle({900, 400}, 100, s.WHITE, 64)
-        s.draw_rectangle({100, 400, 100, 100}, s.YELLOW)
+	circle_1 := [2]f32{100, 400}
+	circle_2 := [2]f32{100, 600}
 
-        s.present()
-    }
+    previous := time.tick_now()
+    speed: f64 = 10
+	for !s.window_should_close() {
+        dt := s.get_delta_time()
+		is_culled :: proc(x: f32) -> bool {return x >= width}
+		if is_culled(circle_1.x) do circle_1.x = 0
+		if is_culled(circle_2.x) do circle_2.x = 0
+
+		circle_1.x += f32(speed * dt)
+		circle_2.x += f32(speed) 
+
+		s.clear(s.DARKGRAY)
+		s.draw_circle(circle_1, 100, s.WHITE)
+		s.draw_circle(circle_2, 100, s.WHITE)
+		s.present()
+	}
 }

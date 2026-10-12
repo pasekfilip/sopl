@@ -1,6 +1,5 @@
 package sopl
 
-import "core:fmt"
 import "core:image"
 import _ "core:image/png"
 import "core:log"
@@ -14,6 +13,7 @@ State :: struct {
 	window:          ^sdl.Window,
 	pipelines:       [Shader_Type]^sdl.GPUGraphicsPipeline,
 	last_tick:       time.Tick,
+	dt:              f64,
 	projection:      matrix[4, 4]f32,
 	previous_press:  #sparse[sdl.Scancode]bool,
 	current_press:   #sparse[sdl.Scancode]bool,
@@ -111,15 +111,16 @@ MAX_TRANSFER_BUFFER_SIZE :: MAX_VERTICES * size_of(Vertex)
 MAX_INDICES :: BATCH_QUAD_CAPACITY * 6
 
 init_window :: proc(title: cstring, width: u32, height: u32, mode := PresentMode.VSYNC) {
-    context.logger = log.create_console_logger()
+	context.logger = log.create_console_logger()
 	ensure(sdl.Init({.VIDEO}), string(sdl.GetError()))
 
 	g = new(State)
 	g.window = sdl.CreateWindow(title, i32(width), i32(height), {})
+	g.last_tick = time.tick_now()
 
 	g.clear_color = WHITE
 	g.device = sdl.CreateGPUDevice({.SPIRV}, ODIN_DEBUG, nil)
-    log.error(sdl.GetError())
+	if g.device == nil do log.error(sdl.GetError())
 	ensure(sdl.ClaimWindowForGPUDevice(g.device, g.window), string(sdl.GetError()))
 
 	g.transfer_buf = sdl.CreateGPUTransferBuffer(
@@ -142,7 +143,7 @@ init_window :: proc(title: cstring, width: u32, height: u32, mode := PresentMode
 	g.projection = linalg.matrix_ortho3d_f32(0, f32(width), f32(height), 0, 0, 1, false)
 
 	ensure(
-		sdl.SetGPUSwapchainParameters(g.device, g.window, sdl.GPUSwapchainComposition.SDR, mode),
+		sdl.SetGPUSwapchainParameters(g.device, g.window, sdl.GPUSwapchainComposition.SDR, .VSYNC),
 		string(sdl.GetError()),
 	)
 }
@@ -238,7 +239,7 @@ close_window :: proc() {
 
 window_should_close :: proc() -> bool {
 	g.previous_press = g.current_press
-	g.last_tick = time.tick_now()
+	g.dt = time.duration_seconds(time.tick_lap_time(&g.last_tick))
 
 	ev: sdl.Event
 	for sdl.PollEvent(&ev) {
@@ -256,16 +257,16 @@ window_should_close :: proc() -> bool {
 	return false
 }
 
+get_delta_time :: proc() -> f64 {
+	return g.dt
+}
+
 is_key_down :: proc(code: Physical_KeyCode) -> bool {
 	return g.current_press[code]
 }
 
 is_key_pressed :: proc(code: Physical_KeyCode) -> bool {
 	return g.current_press[code] && !g.previous_press[code]
-}
-
-get_delta_time :: proc() -> f32 {
-	return f32(time.tick_since(g.last_tick) / time.Second)
 }
 
 create_quad_mesh :: proc() -> Mesh {
@@ -451,23 +452,30 @@ draw_circle :: proc(position: [2]f32, r: f32, color: Color, segments := 4) {
 		linalg.matrix4_translate_f32({position.x, position.y, 0}) *
 		linalg.matrix4_scale_f32({r, r, 1})
 
-    // TODO: not the pretties sollution
+	// TODO: not the pretties sollution
 	rad: f32 = 0
 	for i in 0 ..< segments {
-        foo := Vertex{pos = {0, 0, 1}, uv = {0, 1}, color = color}
-        foo.pos = (model_matrix * [4]f32{foo.pos.x, foo.pos.y, foo.pos.z, 1}).xyz
-        append(&batch_vertices, foo)
-        rad -= linalg.PI / f32(segments)
-        for i in 0..<3 {
-            rad += linalg.PI / f32(segments)
-            vertex := Vertex{pos = {linalg.cos(rad), linalg.sin(rad), 1}, uv = {0, 1}, color = color}
-            vertex.pos = (model_matrix * [4]f32{vertex.pos.x, vertex.pos.y, vertex.pos.z, 1}).xyz
-            append(&batch_vertices, vertex)
-        }
+		foo := Vertex {
+			pos   = {0, 0, 1},
+			uv    = {0, 1},
+			color = color,
+		}
+		foo.pos = (model_matrix * [4]f32{foo.pos.x, foo.pos.y, foo.pos.z, 1}).xyz
+		append(&batch_vertices, foo)
+		rad -= linalg.PI / f32(segments)
+		for i in 0 ..< 3 {
+			rad += linalg.PI / f32(segments)
+			vertex := Vertex {
+				pos   = {linalg.cos(rad), linalg.sin(rad), 1},
+				uv    = {0, 1},
+				color = color,
+			}
+			vertex.pos = (model_matrix * [4]f32{vertex.pos.x, vertex.pos.y, vertex.pos.z, 1}).xyz
+			append(&batch_vertices, vertex)
+		}
 	}
 
-    add_draw_command(u32(6 * segments), .Textured)
-    
+	add_draw_command(u32(6 * segments), .Textured)
 }
 
 draw_rectangle :: proc(destination: Rect, color: Color, rotation: f32 = 0) {
@@ -483,39 +491,39 @@ draw_rectangle :: proc(destination: Rect, color: Color, rotation: f32 = 0) {
 		append(&batch_vertices, vertex)
 	}
 
-    add_draw_command(6, .Textured)
+	add_draw_command(6, .Textured)
 }
 
 add_draw_command :: proc(index_count: u32, shader_type: Shader_Type) {
-    command_count := len(draw_commands)
-    if command_count == 0 {
-        append(
-            &draw_commands,
-            (Draw_Command) {
-                texture = g.default_texture,
-                pipeline_type = shader_type,
-                first_index = 0,
-                index_count = index_count,
-            },
-        )
-        return
-    }
+	command_count := len(draw_commands)
+	if command_count == 0 {
+		append(
+			&draw_commands,
+			(Draw_Command) {
+				texture = g.default_texture,
+				pipeline_type = shader_type,
+				first_index = 0,
+				index_count = index_count,
+			},
+		)
+		return
+	}
 
-    previous_command := &draw_commands[command_count - 1]
-    if previous_command.pipeline_type == shader_type &&
-    previous_command.texture == g.default_texture {
-        previous_command.index_count += index_count
-    } else {
-        append(
-            &draw_commands,
-            (Draw_Command) {
-                texture = g.default_texture,
-                pipeline_type = shader_type,
-                first_index = previous_command.index_count,
-                index_count = index_count,
-            },
-        )
-    }
+	previous_command := &draw_commands[command_count - 1]
+	if previous_command.pipeline_type == shader_type &&
+	   previous_command.texture == g.default_texture {
+		previous_command.index_count += index_count
+	} else {
+		append(
+			&draw_commands,
+			(Draw_Command) {
+				texture = g.default_texture,
+				pipeline_type = shader_type,
+				first_index = previous_command.index_count,
+				index_count = index_count,
+			},
+		)
+	}
 }
 
 // draw_rectangle_lines :: proc(destination: Rect, color: Color, rotation: f32) {
