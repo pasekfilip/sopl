@@ -1,5 +1,6 @@
 package sopl
 
+import "core:fmt"
 import "core:image"
 import _ "core:image/png"
 import "core:log"
@@ -23,6 +24,7 @@ State :: struct {
 	index_buffer:    ^sdl.GPUBuffer,
 	vertex_buffer:   ^sdl.GPUBuffer,
 	clear_color:     Color,
+	target_fps:      u32,
 }
 
 Physical_KeyCode :: sdl.Scancode
@@ -143,7 +145,7 @@ init_window :: proc(title: cstring, width: u32, height: u32, mode := PresentMode
 	g.projection = linalg.matrix_ortho3d_f32(0, f32(width), f32(height), 0, 0, 1, false)
 
 	ensure(
-		sdl.SetGPUSwapchainParameters(g.device, g.window, sdl.GPUSwapchainComposition.SDR, .VSYNC),
+		sdl.SetGPUSwapchainParameters(g.device, g.window, sdl.GPUSwapchainComposition.SDR, mode),
 		string(sdl.GetError()),
 	)
 }
@@ -356,14 +358,15 @@ present :: proc() {
 		{buffer = g.vertex_buffer, size = u32(len(batch_vertices) * size_of(Vertex))},
 		false,
 	)
-
 	sdl.EndGPUCopyPass(copy_pass)
+
 
 	swapchain_tex: ^sdl.GPUTexture
 	ensure(
 		sdl.WaitAndAcquireGPUSwapchainTexture(cmd_buf, g.window, &swapchain_tex, nil, nil),
 		string(sdl.GetError()),
 	)
+
 	if swapchain_tex == nil { 	// the window is minimaized (wayland not rly)
 		ensure(sdl.SubmitGPUCommandBuffer(cmd_buf), string(sdl.GetError()))
 	}
@@ -401,15 +404,24 @@ present :: proc() {
 		)
 	}
 
-
 	sdl.EndGPURenderPass(render_pass)
 	ensure(sdl.SubmitGPUCommandBuffer(cmd_buf), string(sdl.GetError()))
-	draw_commands = {}
-	batch_vertices = {}
+    clear(&draw_commands)
+    clear(&batch_vertices)
+
+    if g.target_fps > 0 {
+        target_sec := 1/f64(g.target_fps)
+        dt := time.duration_seconds(time.tick_since(g.last_tick))
+        time.sleep((time.Duration)((target_sec - dt) * f64(time.Second)))
+    }
 }
 
-clear :: proc(color: Color) {
+clear_background :: proc(color: Color) {
 	g.clear_color = color
+}
+
+set_target_fps :: proc(target_fps: u32) {
+	g.target_fps = target_fps
 }
 
 // draw_texture :: proc(tex: ^Texture, source: Rect, destination: Rect, rotation: f32) {
@@ -447,7 +459,7 @@ clear :: proc(color: Color) {
 // }
 
 // One segment is one quad
-draw_circle :: proc(position: [2]f32, r: f32, color: Color, segments := 4) {
+draw_circle :: proc(position: [2]f32, r: f32, color: Color, segments := 16) {
 	model_matrix :=
 		linalg.matrix4_translate_f32({position.x, position.y, 0}) *
 		linalg.matrix4_scale_f32({r, r, 1})
