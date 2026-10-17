@@ -35,7 +35,6 @@ Texture :: struct {
 	texture:       ^sdl.GPUTexture,
 }
 
-//odinfmt: disable
 Color :: [4]u8
 LIGHTGRAY  :: Color{ 200, 200, 200, 255 }
 GRAY       :: Color{ 130, 130, 130, 255 }
@@ -64,11 +63,13 @@ BLACK      :: Color{ 0, 0, 0, 255 }
 BLANK      :: Color{ 0, 0, 0, 0 }
 MAGENTA    :: Color{ 255, 0, 255, 255 }
 RAYWHITE   :: Color{ 245, 245, 245, 255 }
-//odinfmt: enable
 
 Rect :: struct {
 	x, y, width, height: f32,
 }
+
+Vec3 :: [3]f32
+Vec2 :: [2]f32
 
 Draw_Command :: struct {
 	texture:       ^sdl.GPUTexture,
@@ -78,8 +79,8 @@ Draw_Command :: struct {
 }
 
 Vertex :: struct {
-	pos:   [3]f32,
-	uv:    [2]f32,
+	pos:   Vec3,
+	uv:    Vec2,
 	color: [4]u8,
 }
 
@@ -142,7 +143,7 @@ init_window :: proc(title: cstring, width: u32, height: u32, mode := PresentMode
 
 	for type in Shader_Type {g.pipelines[type] = setup_pipeline(type)}
 
-	g.projection = linalg.matrix_ortho3d_f32(0, f32(width), f32(height), 0, 0, 1, false)
+	g.projection = sex_ortho(0, f32(width), 0, f32(height))
 
 	ensure(
 		sdl.SetGPUSwapchainParameters(g.device, g.window, sdl.GPUSwapchainComposition.SDR, mode),
@@ -271,79 +272,6 @@ is_key_pressed :: proc(code: Physical_KeyCode) -> bool {
 	return g.current_press[code] && !g.previous_press[code]
 }
 
-create_quad_mesh :: proc() -> Mesh {
-	vertices: []Vertex = {
-		{pos = {-0.5, -0.5, 1}, uv = {0, 1}, color = {0, 0, 0, 255}},
-		{pos = {0.5, -0.5, 1}, uv = {1, 1}, color = {0, 0, 0, 255}},
-		{pos = {0.5, 0.5, 1}, uv = {1, 0}, color = {0, 0, 0, 255}},
-		{pos = {-0.5, 0.5, 1}, uv = {0, 0}, color = {0, 0, 0, 255}},
-	}
-
-	indices: []u32 = {0, 1, 2, 0, 2, 3}
-	return create_mesh(vertices, indices)
-}
-
-create_mesh :: proc(vertices: []Vertex, indices: []u32) -> Mesh {
-	vertices_byte_size := len(vertices) * size_of(Vertex)
-	indices_byte_size := len(indices) * size_of(indices[0])
-	transfer_buffer_size := u32(vertices_byte_size) + u32(indices_byte_size)
-
-	vertex_buffer := sdl.CreateGPUBuffer(
-		g.device,
-		{props = 0, size = u32(vertices_byte_size), usage = {.VERTEX}},
-	)
-
-	index_buffer := sdl.CreateGPUBuffer(
-		g.device,
-		{props = 0, size = u32(indices_byte_size), usage = {.INDEX}},
-	)
-
-	transfer_buf := sdl.CreateGPUTransferBuffer(
-		g.device,
-		{usage = .UPLOAD, size = transfer_buffer_size},
-	)
-
-	transfer_mem := sdl.MapGPUTransferBuffer(g.device, transfer_buf, false)
-	mem.copy(transfer_mem, raw_data(vertices), vertices_byte_size)
-
-	index_dest := mem.ptr_offset((^Vertex)(transfer_mem), len(vertices))
-	mem.copy(index_dest, raw_data(indices), indices_byte_size)
-
-	sdl.UnmapGPUTransferBuffer(g.device, transfer_buf)
-
-	copy_cmd_buf := sdl.AcquireGPUCommandBuffer(g.device)
-	copy_pass := sdl.BeginGPUCopyPass(copy_cmd_buf)
-
-	sdl.UploadToGPUBuffer(
-		copy_pass,
-		{transfer_buffer = transfer_buf},
-		{buffer = vertex_buffer, size = u32(vertices_byte_size)},
-		false,
-	)
-	sdl.UploadToGPUBuffer(
-		copy_pass,
-		{transfer_buffer = transfer_buf, offset = u32(vertices_byte_size)},
-		{buffer = index_buffer, size = u32(indices_byte_size)},
-		false,
-	)
-
-	sdl.EndGPUCopyPass(copy_pass)
-	ensure(sdl.SubmitGPUCommandBuffer(copy_cmd_buf), string(sdl.GetError()))
-
-	sdl.ReleaseGPUTransferBuffer(g.device, transfer_buf)
-
-	return Mesh {
-		vertex_buffer = vertex_buffer,
-		index_buffer = index_buffer,
-		num_indices = u32(len(indices)),
-	}
-}
-
-destroy_mesh :: proc(mesh: Mesh) {
-	sdl.ReleaseGPUBuffer(g.device, mesh.vertex_buffer)
-	sdl.ReleaseGPUBuffer(g.device, mesh.index_buffer)
-}
-
 present :: proc() {
 	mem_ptr := sdl.MapGPUTransferBuffer(g.device, g.transfer_buf, true)
 	mem.copy(mem_ptr, raw_data(&batch_vertices), len(batch_vertices) * size_of(Vertex))
@@ -359,7 +287,6 @@ present :: proc() {
 		false,
 	)
 	sdl.EndGPUCopyPass(copy_pass)
-
 
 	swapchain_tex: ^sdl.GPUTexture
 	ensure(
@@ -424,56 +351,22 @@ set_target_fps :: proc(target_fps: u32) {
 	g.target_fps = target_fps
 }
 
-// draw_texture :: proc(tex: ^Texture, source: Rect, destination: Rect, rotation: f32) {
-// 	sdl.BindGPUGraphicsPipeline(render_pass, g.pipelines[.Textured])
-// 	sdl.BindGPUVertexBuffers(
-// 		render_pass,
-// 		0,
-// 		&(sdl.GPUBufferBinding{buffer = g.mesh.vertex_buffer}),
-// 		1,
-// 	)
-// 	sdl.BindGPUIndexBuffer(render_pass, {buffer = g.mesh.index_buffer}, ._32BIT)
-// 	model_matrix :=
-// 		linalg.matrix4_translate_f32({destination.x, destination.y, 0}) *
-// 		linalg.matrix4_rotate_f32(rotation, {0, 0, 1}) *
-// 		linalg.matrix4_scale_f32({destination.width, destination.height, 1})
-// 	sdl.PushGPUVertexUniformData(g.cmd_buf, 1, &model_matrix, size_of(matrix[4, 4]f32))
-//
-// 	Sprite_Offset :: struct {
-// 		scale:  [2]f32,
-// 		offset: [2]f32,
-// 	}
-// 	sprite_offset := &Sprite_Offset {
-// 		scale = {source.width / f32(tex.width), source.height / f32(tex.height)},
-// 		offset = {(source.x - min(source.width, 0)) / f32(tex.width), source.y / f32(tex.height)},
-// 	}
-// 	sdl.PushGPUVertexUniformData(g.cmd_buf, 2, sprite_offset, size_of(Sprite_Offset))
-// 	sdl.BindGPUFragmentSamplers(
-// 		render_pass,
-// 		0,
-// 		&(sdl.GPUTextureSamplerBinding{sampler = g.default_sampler, texture = tex.texture}),
-// 		1,
-// 	)
-//
-// 	sdl.DrawGPUIndexedPrimitives(render_pass, g.mesh.num_indices, 1, 0, 0, 0)
-// }
-
+// TODO: it breaks on more segments 
 // One segment is one quad
-draw_circle :: proc(position: [2]f32, r: f32, color: Color, segments := 16) {
+draw_circle :: proc(position: Vec2, r: f32, color: Color, segments := 16) {
 	model_matrix :=
 		linalg.matrix4_translate_f32({position.x, position.y, 0}) *
 		linalg.matrix4_scale_f32({r, r, 1})
 
-	// TODO: not the pretties sollution
 	rad: f32 = 0
 	for i in 0 ..< segments {
-		foo := Vertex {
+		f_vertex := Vertex {
 			pos   = {0, 0, 1},
 			uv    = {0, 1},
 			color = color,
 		}
-		foo.pos = (model_matrix * [4]f32{foo.pos.x, foo.pos.y, foo.pos.z, 1}).xyz
-		append(&batch_vertices, foo)
+		f_vertex.pos = (model_matrix * [4]f32{f_vertex.pos.x, f_vertex.pos.y, f_vertex.pos.z, 1}).xyz
+		append(&batch_vertices, f_vertex)
 		rad -= linalg.PI / f32(segments)
 		for i in 0 ..< 3 {
 			rad += linalg.PI / f32(segments)
@@ -500,12 +393,14 @@ draw_rectangle :: proc(destination: Rect, color: Color, rotation: f32 = 0) {
 	for &vertex, index in vertices {
 		vertex.color = color
 		vertex.pos = (model_matrix * [4]f32{vertex.pos.x, vertex.pos.y, vertex.pos.z, 1}).xyz
+        fmt.println(vertex.pos)
 		append(&batch_vertices, vertex)
 	}
 
 	add_draw_command(6, .Textured)
 }
 
+@(private="file")
 add_draw_command :: proc(index_count: u32, shader_type: Shader_Type) {
 	command_count := len(draw_commands)
 	if command_count == 0 {
@@ -538,25 +433,16 @@ add_draw_command :: proc(index_count: u32, shader_type: Shader_Type) {
 	}
 }
 
-// draw_rectangle_lines :: proc(destination: Rect, color: Color, rotation: f32) {
-// 	sdl.BindGPUGraphicsPipeline(render_pass, g.pipelines[.Wireframe])
-// 	sdl.BindGPUVertexBuffers(
-// 		render_pass,
-// 		0,
-// 		&(sdl.GPUBufferBinding{buffer = g.mesh.vertex_buffer}),
-// 		1,
-// 	)
-// 	sdl.BindGPUIndexBuffer(render_pass, {buffer = g.mesh.index_buffer}, ._32BIT)
-// 	model_matrix :=
-// 		linalg.matrix4_translate_f32({destination.x, destination.y, 0}) *
-// 		linalg.matrix4_rotate_f32(rotation, {0, 0, 1}) *
-// 		linalg.matrix4_scale_f32({destination.width, destination.height, 1})
-// 	sdl.PushGPUVertexUniformData(g.cmd_buf, 1, &model_matrix, size_of(matrix[4, 4]f32))
-// 	color := color
-// 	sdl.PushGPUFragmentUniformData(g.cmd_buf, 0, &color, size_of([4]f32))
-//
-// 	sdl.DrawGPUIndexedPrimitives(render_pass, g.mesh.num_indices, 1, 0, 0, 0)
-// }
+@(private="file")
+sex_ortho :: proc(left, right, top, bottom: f32) -> (m: matrix[4,4]f32) {
+    m = 1
+    m[0, 0] =  2/f32(right - left)
+    m[1, 1] = -2/f32(bottom - top)
+    m[0, 3] = -1
+    m[1, 3] =  1
+    fmt.printf("%#v", m)
+    return
+}
 
 load_texture :: proc(path: string) -> Texture {
 	img, err := image.load_from_file(path, {.alpha_add_if_missing})
