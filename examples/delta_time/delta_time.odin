@@ -14,7 +14,7 @@ main :: proc() {
 	circle_2 := [2]f32{100, 600}
 
     speed: f64 = 5
-	for !s.window_should_close() {
+	for !s.update() {
         dt := s.get_delta_time()
 
 		is_culled :: proc(x: f32) -> bool {return x >= width}
