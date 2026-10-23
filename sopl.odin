@@ -5,9 +5,9 @@ import "core:image"
 import _ "core:image/png"
 import "core:log"
 import "core:math/linalg"
-import "core:mem"
 import "core:time"
 import sdl "vendor:sdl3"
+import "core:mem"
 
 State :: struct {
 	device:          ^sdl.GPUDevice,
@@ -82,7 +82,7 @@ Vertex :: struct {
 }
 
 Rect :: struct {
-	x, y, width, height: f32,
+	x, y, w, h: f32,
 }
 
 Vec3 :: [3]f32
@@ -108,7 +108,7 @@ init_window :: proc(title: cstring, width: u32, height: u32, mode := PresentMode
 	ensure(sdl.Init({.VIDEO}), string(sdl.GetError()))
 
 	g = new(State)
-	g.window = sdl.CreateWindow(title, i32(width), i32(height), {.HIGH_PIXEL_DENSITY, .RESIZABLE, .FULLSCREEN})
+	g.window = sdl.CreateWindow(title, i32(width), i32(height), {.HIGH_PIXEL_DENSITY, .FULLSCREEN, .RESIZABLE})
     g.display = sdl.GetPrimaryDisplay()
 	g.last_tick = time.tick_now()
 
@@ -268,7 +268,7 @@ draw_rectangle :: proc(destination: Rect, color: Color, rotation: f32 = 0) {
 	model_matrix :=
 		linalg.matrix4_translate_f32({destination.x, destination.y, 0}) *
 		linalg.matrix4_rotate_f32(rotation, {0, 0, 1}) *
-		linalg.matrix4_scale_f32({destination.width, destination.height, 1})
+		linalg.matrix4_scale_f32({destination.w, destination.h, 1})
 
 	vertices := TEMPLATE_VERTEX
 	for &vertex, index in vertices {
@@ -302,7 +302,11 @@ present :: proc() {
 		sdl.WaitAndAcquireGPUSwapchainTexture(cmd_buf, g.window, &swapchain_tex, &swap_w, &swap_h),
 		string(sdl.GetError()),
 	)
-    g.projection = sex_ortho(0, f32(swap_w), 0, f32(swap_h))
+    // TODO: when i dont adjust to the swap chain texture i just get stretched space which might be what i want actually
+    // its true that the aspect ratio might not match but bcs im changing the projection it moves everything in the world
+    // so its not one to one
+    // the moment i stretch the projection im moving also stuff in my world
+    // g.projection = sex_ortho(0, f32(swap_w), 0, f32(swap_h))
 
 	if swapchain_tex == nil { 	// the window is minimaized (wayland not rly)
 		ensure(sdl.SubmitGPUCommandBuffer(cmd_buf), string(sdl.GetError()))
@@ -416,25 +420,57 @@ load_texture :: proc(path: string) -> Texture {
 }
 
 // Collision
-AABB :: proc(r1: Rect, r2: Rect) -> bool {
+aabb :: proc(r1: Rect, r2: Rect) -> bool {
+    r1_half_widht := r1.w / 2
+    r1_half_height := r1.h / 2
 
+    r2_half_widht := r2.w / 2
+    r2_half_height := r2.h / 2
 
+    r1_sides := { r1.x + r1.w  }
+    r2_sides := {  }
+
+    return r1.x < r2.x && 
 }
+
 /*
+prop have to compute the cordinates with the with and
+middle point
 
-  u1       u2
-l1   r1  l2  r2
-  d1       d2
+  t1       t2                
+l1   r1  l2  r2     l1 l2 r1 r2         
+  d1       d2              
 
-   u2       u1    
+   t2       t1    
  l2  r2   l1   r1 
    d2       d1    
 
-we are taking if r1
-is touching r2
+  t1   
+l1   r1
+  d1   
 
-we are not touching
-r1 < l2 r2 < l1
+  t2  
+l2  r2
+  d2  
+
+d1 = 11
+t2 = 10
+
+t1 = 10 
+d2 = 11
+
+11 > 10 && 11 > 10 
+
+lets talk about single case where r1 is on the left
+
+r1 > l2 && r2 > l1 (ye here if both is true we are inside each other)
+d1 > t2 && d2 > t1
+i should do something similar with y
+
+is this ever true
+
+when are they touching
+
 
 */
 
