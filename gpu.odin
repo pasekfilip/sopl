@@ -1,6 +1,9 @@
 #+private
 package sopl
 
+import sdl "vendor:sdl3"
+import "core:mem"
+
 Shader_Type :: enum {
 	Wireframe,
 	Textured,
