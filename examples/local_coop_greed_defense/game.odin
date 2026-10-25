@@ -44,12 +44,6 @@ Keys :: enum {
 	X,
 }
 
-Animation_State :: enum {
-	Idle,
-	Thrust,
-	Jump,
-	Run,
-}
 
 Layer :: enum {
 	Ground,
