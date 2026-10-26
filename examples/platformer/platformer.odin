@@ -3,21 +3,25 @@ package platformer
 import "core:fmt"
 import s "../../"
 
-Entity_high :: struct {
-
-}
-
 Entity :: struct {
-    using rect: s.Rect,
+    using rect:       s.Rect,
     collision_offset: [2]f32,
-    collision_size: [2]f32,
-    update: proc(e: ^Entity),
-    collision: proc(),
-    color: s.Color,
-    index: E_Handle,
-    alive: bool
+    collision_size:   [2]f32,
+    update:           proc(e: ^Entity),
+    collision:        proc(),
+    color:            s.Color,
+	category:         Layer,
+	mask:             bit_set[Layer],
+    index:            E_Handle,
+    alive:            bool
 }
 E_Handle :: u32
+
+Layer :: enum {
+	Ground,
+	Enemy,
+	Player,
+}
 
 add_entity :: proc(entity: Entity) {
     index: u32
@@ -49,6 +53,8 @@ init :: proc() {
         color = s.ORANGE,
         collision_offset = {5, 5},
         collision_size = {10, 10},
+        category = .Player,
+        mask = {.Ground},
         update = proc(e: ^Entity) {
             if s.is_key_down(.D) do e.x += 1
             if s.is_key_down(.A) do e.x -= 1
@@ -57,25 +63,30 @@ init :: proc() {
         collision = proc() {
         }
     })
+
     add_entity({
         rect = { x = 180, y = 90, w = 20, h = 20 },
         color = s.WHITE,
+        category = .Player,
+        mask = {.Ground},
         update = proc(e: ^Entity) {
             // e.y += GRAVITY * f32(s.get_delta_time())
         },
         collision = proc() {
         }
     })
-    // add_entity({
-    //     rect = { x = 50, y = 150, w = 200, h = 10 },
-    //     color = s.WHITE,
-    //     update = proc(e: ^Entity) {
-    //
-    //     },
-    //     collision = proc() {
-    //
-    //     }
-    // })
+    add_entity({
+        rect = { x = 50, y = 150, w = 200, h = 10 },
+        color = s.WHITE,
+        category = .Ground,
+        mask = {.Player},
+        update = proc(e: ^Entity) {
+
+        },
+        collision = proc() {
+
+        }
+    })
 
     width :: 320
     height :: 180
