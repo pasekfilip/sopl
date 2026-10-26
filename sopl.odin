@@ -433,23 +433,17 @@ AABB :: struct {
 }
 // axis aligned bounding box
 aabb :: proc(r1: Rect, r2: Rect) -> bool {
-    r1_half_width := r1.w / 2
-    r1_half_height := r1.h / 2
-
-    r2_half_width := r2.w / 2
-    r2_half_height := r2.h / 2
-
     r1_s := AABB {
-        t = r1.y - r1_half_height, 
-        b = r1.y + r1_half_height,
-        l = r1.x - r1_half_width,
-        r = r1.x + r1_half_width 
+        t = r1.y,
+        b = r1.y + r1.h,
+        l = r1.x,
+        r = r1.x + r1.w 
     }
     r2_s := AABB {
-        t = r2.y - r2_half_height, 
-        b = r2.y + r2_half_height,
-        l = r2.x - r2_half_width,
-        r = r2.x + r2_half_width 
+        t = r2.y,
+        b = r2.y + r2.h,
+        l = r2.x,
+        r = r2.x + r2.w 
     }
 
     return r1_s.r > r2_s.l && r2_s.r > r1_s.l &&

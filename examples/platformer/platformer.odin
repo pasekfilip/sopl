@@ -7,14 +7,10 @@ Entity_high :: struct {
 
 }
 
-// Collision :: struct {
-//     offset: [2]f32,
-//     w,h: f32
-// }
-
 Entity :: struct {
     using rect: s.Rect,
-    // collision: Collision,
+    collision_offset: [2]f32,
+    collision_size: [2]f32,
     update: proc(e: ^Entity),
     collision: proc(),
     color: s.Color,
@@ -51,7 +47,11 @@ init :: proc() {
     add_entity({
         rect = { x = 140, y = 90, w = 20, h = 20 },
         color = s.ORANGE,
+        collision_offset = {5, 5},
+        collision_size = {10, 10},
         update = proc(e: ^Entity) {
+            if s.is_key_down(.D) do e.x += 1
+            if s.is_key_down(.A) do e.x -= 1
             // e.y += GRAVITY * f32(s.get_delta_time())
         },
         collision = proc() {
@@ -66,16 +66,16 @@ init :: proc() {
         collision = proc() {
         }
     })
-    add_entity({
-        rect = { x = 50, y = 150, w = 200, h = 10 },
-        color = s.WHITE,
-        update = proc(e: ^Entity) {
-
-        },
-        collision = proc() {
-
-        }
-    })
+    // add_entity({
+    //     rect = { x = 50, y = 150, w = 200, h = 10 },
+    //     color = s.WHITE,
+    //     update = proc(e: ^Entity) {
+    //
+    //     },
+    //     collision = proc() {
+    //
+    //     }
+    // })
 
     width :: 320
     height :: 180
@@ -90,14 +90,21 @@ camera := s.Camera {
 // so we are doing update collision draw
 step :: proc() -> bool {
     for &e in entities { if !e.alive do break; e.update(&e) }
-    for e in entities { if !e.alive do break; e.collision() }
+
+    for e, i in entities {
+        if !e.alive do break;
+        for e2 in entities[i + 1:] {
+            if !e2.alive do break;
+            fmt.println(s.aabb(recompute_collision_box(e), e2))
+        }
+    }
 
     s.set_camera(camera)
     s.clear_background(s.DARKGRAY)
     for e in entities {
         if !e.alive do break
-        s.draw_rectangle_outline(e.rect, s.RED)
         s.draw_rectangle(e.rect, e.color)
+        s.draw_rectangle_outline(recompute_collision_box(e), s.RED)
     }
     s.present()
 
@@ -108,4 +115,7 @@ end :: proc() {
     s.close_window()
 }
 
+recompute_collision_box :: proc(e: Entity) -> s.Rect {
+    return {e.x + e.collision_offset.x, e.y + e.collision_offset.y, e.collision_size.x, e.collision_size.y}
+}
 
