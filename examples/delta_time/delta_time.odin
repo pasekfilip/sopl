@@ -21,8 +21,8 @@ main :: proc() {
 		if is_culled(circle_1.x) do circle_1.x = 0
 		if is_culled(circle_2.x) do circle_2.x = 0
 
-		circle_1.x += f32(speed * dt)
-		circle_2.x += f32(speed) 
+		circle_1.x += speed * dt
+		circle_2.x += speed
 
         s.clear_background(s.DARKGRAY)
 		s.draw_circle(circle_1, 100, s.WHITE)

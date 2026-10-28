@@ -15,7 +15,7 @@ State :: struct {
 	window:          ^sdl.Window,
 	pipelines:       [Shader_Type]^sdl.GPUGraphicsPipeline,
 	last_tick:       time.Tick,
-	dt:              f64,
+	dt:              f32,
 	projection:      matrix[4, 4]f32,
 	previous_press:  #sparse[sdl.Scancode]bool,
 	current_press:   #sparse[sdl.Scancode]bool,
@@ -155,7 +155,7 @@ close_window :: proc() {
 
 update :: proc() -> bool {
 	g.previous_press = g.current_press
-	g.dt = time.duration_seconds(time.tick_lap_time(&g.last_tick))
+	g.dt = f32(time.duration_seconds(time.tick_lap_time(&g.last_tick)))
 
 	ev: sdl.Event
 	for sdl.PollEvent(&ev) {
@@ -173,7 +173,7 @@ update :: proc() -> bool {
 	return false
 }
 
-get_delta_time :: proc() -> f64 {
+get_delta_time :: proc() -> f32 {
 	return g.dt
 }
 
@@ -216,17 +216,19 @@ add_draw_command :: proc(index_count: u32, shader_type: Shader_Type) {
 		return
 	}
 
-	previous_command := &draw_commands[command_count - 1]
-	if previous_command.pipeline_type == shader_type &&
-	   previous_command.texture == g.default_texture {
-		previous_command.index_count += index_count
+	prev_command := &draw_commands[command_count - 1]
+
+	if prev_command.pipeline_type == shader_type &&
+	   prev_command.texture == g.default_texture &&
+       prev_command.view_matrix == g.view_matrix {
+		prev_command.index_count += index_count
 	} else {
 		append(
 			&draw_commands,
 			(Draw_Command) {
 				texture = g.default_texture,
 				pipeline_type = shader_type,
-				first_index = previous_command.index_count,
+                first_index = prev_command.index_count + prev_command.first_index,
 				index_count = index_count,
                 view_matrix = g.view_matrix
 			},
@@ -320,6 +322,7 @@ present :: proc() {
 	if swapchain_tex == nil { 	// the window is minimaized (wayland not rly)
 		ensure(sdl.SubmitGPUCommandBuffer(cmd_buf), string(sdl.GetError()))
 	}
+
 	color_target := sdl.GPUColorTargetInfo {
 		texture     = swapchain_tex,
 		load_op     = .CLEAR,
