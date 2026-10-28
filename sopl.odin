@@ -110,7 +110,7 @@ init_window :: proc(title: cstring, width: u32, height: u32, mode := PresentMode
 	ensure(sdl.Init({.VIDEO}), string(sdl.GetError()))
 
 	g = new(State)
-	g.window = sdl.CreateWindow(title, i32(width), i32(height), {.HIGH_PIXEL_DENSITY, .FULLSCREEN, .RESIZABLE})
+	g.window = sdl.CreateWindow(title, i32(width), i32(height), {.HIGH_PIXEL_DENSITY, .RESIZABLE})
     g.display = sdl.GetPrimaryDisplay()
 	g.last_tick = time.tick_now()
     set_camera(Camera { zoom = 1 }) 
@@ -432,10 +432,10 @@ load_texture :: proc(path: string) -> Texture {
 }
 
 AABB :: struct {
-    t,b,l,r: f32
-}
+        t,b,l,r: f32
+    }
 // axis aligned bounding box
-aabb :: proc(r1: Rect, r2: Rect) -> bool {
+aabb :: proc(r1: Rect, r2: Rect) -> (bool, Vec2) {
     r1_s := AABB {
         t = r1.y,
         b = r1.y + r1.h,
@@ -449,6 +449,11 @@ aabb :: proc(r1: Rect, r2: Rect) -> bool {
         r = r2.x + r2.w 
     }
 
-    return r1_s.r > r2_s.l && r2_s.r > r1_s.l &&
-           r1_s.b > r2_s.t && r2_s.b > r1_s.t 
+    collided := r1_s.r >= r2_s.l && r2_s.r >= r1_s.l &&
+                r1_s.b >= r2_s.t && r2_s.b >= r1_s.t 
+
+    overflow_x: f32 = 0
+    overflow_y := r1_s.b - r2_s.t
+
+    return collided, {overflow_x, overflow_y}
 }
