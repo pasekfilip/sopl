@@ -96,7 +96,8 @@ TEMPLATE_VERTEX: [4]Vertex : {
 }
 BATCH_QUAD_CAPACITY :: 3000
 MAX_VERTICES :: BATCH_QUAD_CAPACITY * 4
-MAX_TRANSFER_BUFFER_SIZE :: MAX_VERTICES * size_of(Vertex)
+MAX_VERTICES_BYTES :: MAX_VERTICES * size_of(Vertex)
+MAX_TRANSFER_BUFFER_SIZE_BYTES :: MAX_VERTICES * size_of(Vertex)
 INDICES_PER_QUAD :: 6
 MAX_INDICES :: BATCH_QUAD_CAPACITY * INDICES_PER_QUAD
 
@@ -121,7 +122,7 @@ init_window :: proc(title: cstring, width: u32, height: u32, mode := PresentMode
 
 	g.transfer_buf = sdl.CreateGPUTransferBuffer(
 		g.device,
-		{usage = .UPLOAD, size = MAX_TRANSFER_BUFFER_SIZE},
+		{usage = .UPLOAD, size = MAX_TRANSFER_BUFFER_SIZE_BYTES},
 	)
 	g.default_texture = create_default_texture()
 	g.default_sampler = sdl.CreateGPUSampler(
@@ -131,7 +132,7 @@ init_window :: proc(title: cstring, width: u32, height: u32, mode := PresentMode
 	g.index_buffer = create_default_indices()
 	g.vertex_buffer = sdl.CreateGPUBuffer(
 		g.device,
-		{props = 0, size = u32(MAX_VERTICES), usage = {.VERTEX}},
+		{props = 0, size = u32(MAX_VERTICES_BYTES), usage = {.VERTEX}},
 	)
 
 	for type in Shader_Type {g.pipelines[type] = setup_pipeline(type)}
@@ -236,7 +237,6 @@ add_draw_command :: proc(index_count: u32, shader_type: Shader_Type) {
 	}
 }
 
-// TODO: it breaks on more segments 
 // One segment is one quad
 draw_circle :: proc(position: Vec2, r: f32, color: Color, segments := 16) {
 	model_matrix :=
