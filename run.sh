@@ -1,8 +1,9 @@
 ./compile_shaders.sh
-FOLDER=./examples/platformer
-# odin run ./examples/camera/camera.odin.odin -file -out:./examples/platformer/platformer -keep-executable -debug
-# odin run $FOLDER/platformer.odin -file -debug
-odin build $FOLDER/platformer.odin -file -debug -out:$FOLDER/platformer
-$FOLDER/platformer
+FOLDER=./examples/netcode_pong
+NAME=$(basename $FOLDER)
+# odin run $FOLDER -debug -keep-executable -out:$FOLDER/$NAME
+odin build $FOLDER -debug -out:$FOLDER/$NAME
+# $FOLDER/$NAME client
+# $FOLDER/$NAME no
 
-# raddbg $FOLDER/platformer
+# raddbg $FOLDER/$NAME

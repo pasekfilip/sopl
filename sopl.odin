@@ -164,16 +164,16 @@ update :: proc() -> bool {
 	for sdl.PollEvent(&ev) {
 		#partial switch ev.type {
 		case .QUIT:
-			return true
+			return false
 		case .KEY_DOWN:
-			if ev.key.scancode == .ESCAPE do return true
+			if ev.key.scancode == .ESCAPE do return false
 			g.current_press[ev.key.scancode] = true
 		case .KEY_UP:
 			g.current_press[ev.key.scancode] = false
 		}
 	}
 
-	return false
+	return true
 }
 
 get_delta_time :: proc() -> f32 {
@@ -271,8 +271,8 @@ draw_text :: proc(rect: Rect, text: string, color := WHITE) {
         for &vertex in vertices {
             vertex.color = color
             vertex.pos = (model_matrix * [4]f32{vertex.pos.x, vertex.pos.y, vertex.pos.z, 1}).xyz
-            vertex.uv *= {1./21, 1}
-            vertex.uv += {(1./21) * f32(b%48), 0}
+            vertex.uv *= {1./43, 1}
+            vertex.uv += {(1./43) * f32(b%48), 0}
             append(&batch_vertices, vertex)
         }
         add_draw_command(6, g.default_font_texture, .Textured)
