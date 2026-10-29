@@ -55,7 +55,7 @@ main :: proc() {
 
 init :: proc() {
     p1_index = add_entity({
-        rect = { x = 140, y = 90, w = 20, h = 20 },
+        rect = {x = 140, y = 90, w = 20, h = 20},
         color = s.ORANGE,
         collision_offset = {5, 5},
         collision_size = {10, 15},
@@ -100,7 +100,6 @@ init :: proc() {
         on_collision = proc(e: ^Entity, e2: ^Entity) { }
     })
 
-
     s.init_window("platformer", WIDTH, HEIGHT, .VSYNC)
 }
 
@@ -118,8 +117,11 @@ step :: proc() -> bool {
             if !e2.alive do break;
             if e.category not_in e2.mask do continue
             e.on_ground = false
-            if s.aabb(recompute_collision_box(e), recompute_collision_box(e2)) {
+            collided, overflow := s.aabb(recompute_collision_box(e), recompute_collision_box(e2)) 
+            if collided {
                 e.on_collision(&e, &e2)
+                PUSH_BACK_VEL :: 10
+                e.velocity.y -= overflow.y * PUSH_BACK_VEL
             }
         }
     }
@@ -138,6 +140,7 @@ step :: proc() -> bool {
         s.draw_rectangle_outline(recompute_collision_box(e), s.RED)
     }
 
+    s.draw_text({50,50,10,10}, s.get_fps())
     s.present()
 
     return !s.update()

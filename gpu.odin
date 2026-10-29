@@ -1,6 +1,8 @@
 #+private
 package sopl
 
+import "core:image"
+import _ "core:image/png"
 import sdl "vendor:sdl3"
 import "core:mem"
 
@@ -11,6 +13,8 @@ Shader_Type :: enum {
 
 quad_vert := #load("shaders/spv_quad.vert")
 quad_frag := #load("shaders/spv_quad.frag")
+
+font_atlas := #load("text-atlas.png")
 
 create_default_indices :: proc() -> ^sdl.GPUBuffer {
 	indices: [MAX_INDICES]u16
@@ -51,8 +55,17 @@ create_default_indices :: proc() -> ^sdl.GPUBuffer {
 
 create_default_texture :: proc() -> ^sdl.GPUTexture {
 	white_pixel := []byte{255, 255, 255, 255}
-	width, height: u32 = 1, 1
-	texture_byte_size := u32(len(white_pixel) * size_of(byte))
+    return upload_gpu_texture(1, 1, white_pixel)
+}
+
+create_default_font_texture :: proc() -> ^sdl.GPUTexture {
+	img, err := image.load_from_bytes(font_atlas, {.alpha_add_if_missing})
+    ensure(err == nil)
+    return upload_gpu_texture(u32(img.width), u32(img.height), img.pixels.buf[:])
+}
+
+upload_gpu_texture :: proc(width, height: u32, img: []byte) -> ^sdl.GPUTexture {
+	texture_byte_size := u32(len(img))
 	texture := sdl.CreateGPUTexture(
 		g.device,
 		{
@@ -72,7 +85,7 @@ create_default_texture :: proc() -> ^sdl.GPUTexture {
 	)
 
 	transfer_mem := sdl.MapGPUTransferBuffer(g.device, transfer_buf, false)
-	mem.copy(transfer_mem, raw_data(white_pixel), int(texture_byte_size))
+	mem.copy(transfer_mem, raw_data(img), int(texture_byte_size))
 	sdl.UnmapGPUTransferBuffer(g.device, transfer_buf)
 
 	copy_cmd_buf := sdl.AcquireGPUCommandBuffer(g.device)

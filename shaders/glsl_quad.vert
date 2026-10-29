@@ -9,8 +9,8 @@ layout(set = 1, binding = 1) uniform View {
 };
 
 layout(set = 1, binding = 2) uniform UvAnimation {
-    vec2 scale;
     vec2 offset;
+    vec2 scale;
 };
 
 layout(location = 0) in vec3 pos;

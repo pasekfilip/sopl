@@ -10,23 +10,24 @@ import sdl "vendor:sdl3"
 import "core:mem"
 
 State :: struct {
-	device:          ^sdl.GPUDevice,
-    display:         sdl.DisplayID,
-	window:          ^sdl.Window,
-	pipelines:       [Shader_Type]^sdl.GPUGraphicsPipeline,
-	last_tick:       time.Tick,
-	dt:              f32,
-	projection:      matrix[4, 4]f32,
-	previous_press:  #sparse[sdl.Scancode]bool,
-	current_press:   #sparse[sdl.Scancode]bool,
-	default_texture: ^sdl.GPUTexture,
-	default_sampler: ^sdl.GPUSampler,
-	transfer_buf:    ^sdl.GPUTransferBuffer,
-	index_buffer:    ^sdl.GPUBuffer,
-	vertex_buffer:   ^sdl.GPUBuffer,
-	clear_color:     Color,
-	target_fps:      u32,
-    view_matrix:     matrix[4, 4]f32,
+    device:                ^sdl.GPUDevice,
+    display:               sdl.DisplayID,
+    window:                ^sdl.Window,
+    pipelines:             [Shader_Type]^sdl.GPUGraphicsPipeline,
+    last_tick:             time.Tick,
+    dt:                    f32,
+    projection:            matrix[4, 4]f32,
+    previous_press:        #sparse[sdl.Scancode]bool,
+    current_press:         #sparse[sdl.Scancode]bool,
+    default_texture:       ^sdl.GPUTexture,
+    default_font_texture:  ^sdl.GPUTexture,
+    default_sampler:       ^sdl.GPUSampler,
+    transfer_buf:          ^sdl.GPUTransferBuffer,
+    index_buffer:          ^sdl.GPUBuffer,
+    vertex_buffer:         ^sdl.GPUBuffer,
+    clear_color:           Color,
+    target_fps:            u32,
+    view_matrix:           matrix[4, 4]f32,
 }
 
 Camera :: struct {
@@ -36,11 +37,12 @@ Camera :: struct {
 }
 
 Draw_Command :: struct {
-	texture:       ^sdl.GPUTexture,
-	pipeline_type: Shader_Type,
-	first_index:   u32,
-	index_count:   u32,
-    view_matrix: matrix[4, 4]f32,
+    texture:        ^sdl.GPUTexture,
+    uv:             Rect,
+    pipeline_type:  Shader_Type,
+    first_index:    u32,
+    index_count:    u32,
+    view_matrix:    matrix[4, 4]f32,
 }
 
 Physical_KeyCode :: sdl.Scancode
@@ -110,7 +112,7 @@ init_window :: proc(title: cstring, width: u32, height: u32, mode := PresentMode
 	ensure(sdl.Init({.VIDEO}), string(sdl.GetError()))
 
 	g = new(State)
-	g.window = sdl.CreateWindow(title, i32(width), i32(height), {.HIGH_PIXEL_DENSITY, .RESIZABLE})
+	g.window = sdl.CreateWindow(title, i32(width), i32(height), {.HIGH_PIXEL_DENSITY})
     g.display = sdl.GetPrimaryDisplay()
 	g.last_tick = time.tick_now()
     set_camera(Camera { zoom = 1 }) 
@@ -125,6 +127,7 @@ init_window :: proc(title: cstring, width: u32, height: u32, mode := PresentMode
 		{usage = .UPLOAD, size = MAX_TRANSFER_BUFFER_SIZE_BYTES},
 	)
 	g.default_texture = create_default_texture()
+	g.default_font_texture = create_default_font_texture()
 	g.default_sampler = sdl.CreateGPUSampler(
 		g.device,
 		{min_filter = .NEAREST, mag_filter = .NEAREST, mipmap_mode = .NEAREST},
@@ -178,6 +181,10 @@ get_delta_time :: proc() -> f32 {
 	return g.dt
 }
 
+get_fps :: proc() -> string {
+    return fmt.tprintf("%.0f", 1/g.dt)
+}
+
 is_key_down :: proc(code: Physical_KeyCode) -> bool {
 	return g.current_press[code]
 }
@@ -199,42 +206,6 @@ set_camera :: proc(camera: Camera) {
 		linalg.matrix4_translate_f32({camera.offset.x, camera.offset.y, 0}) *
 		linalg.matrix4_rotate_f32(camera.rotation, {0, 0, 1}) *
 		linalg.matrix4_scale_f32({camera.zoom, camera.zoom, 1})
-}
-
-add_draw_command :: proc(index_count: u32, shader_type: Shader_Type) {
-	command_count := len(draw_commands)
-	if command_count == 0 {
-		append(
-			&draw_commands,
-			(Draw_Command) {
-				texture = g.default_texture,
-				pipeline_type = shader_type,
-				first_index = 0,
-				index_count = index_count,
-                view_matrix = g.view_matrix
-			},
-		)
-		return
-	}
-
-	prev_command := &draw_commands[command_count - 1]
-
-	if prev_command.pipeline_type == shader_type &&
-	   prev_command.texture == g.default_texture &&
-       prev_command.view_matrix == g.view_matrix {
-		prev_command.index_count += index_count
-	} else {
-		append(
-			&draw_commands,
-			(Draw_Command) {
-				texture = g.default_texture,
-				pipeline_type = shader_type,
-                first_index = prev_command.index_count + prev_command.first_index,
-				index_count = index_count,
-                view_matrix = g.view_matrix
-			},
-		)
-	}
 }
 
 // One segment is one quad
@@ -265,14 +236,21 @@ draw_circle :: proc(position: Vec2, r: f32, color: Color, segments := 16) {
 		}
 	}
 
-	add_draw_command(u32(6 * segments), .Textured)
+	add_draw_command(u32(6 * segments), g.default_texture, {0, 0, 1, 1}, .Textured)
+}
+
+draw_rectangle_outline :: proc(rect: Rect, color: Color) {
+    draw_rectangle({rect.x, rect.y, 1, rect.h}, color)              // left side
+    draw_rectangle({rect.x + rect.w - 1, rect.y, 1, rect.h}, color) // right side
+    draw_rectangle({rect.x, rect.y, rect.w, 1}, color)              // top side
+    draw_rectangle({rect.x, rect.y + rect.h - 1, rect.w, 1}, color) // bottom side
 }
 
 draw_rectangle :: proc(rect: Rect, color: Color, rotation: f32 = 0) {
-	model_matrix :=
-		linalg.matrix4_translate_f32({rect.x, rect.y, 0}) *
-		linalg.matrix4_rotate_f32(rotation, {0, 0, 1}) *
-		linalg.matrix4_scale_f32({rect.w, rect.h, 1})
+    model_matrix :=
+        linalg.matrix4_translate_f32({rect.x, rect.y, 0}) *
+        linalg.matrix4_rotate_f32(rotation, {0, 0, 1}) *
+        linalg.matrix4_scale_f32({rect.w, rect.h, 1})
 
 	vertices := TEMPLATE_VERTEX
 	for &vertex in vertices {
@@ -281,14 +259,62 @@ draw_rectangle :: proc(rect: Rect, color: Color, rotation: f32 = 0) {
 		append(&batch_vertices, vertex)
 	}
 
-	add_draw_command(6, .Textured)
+	add_draw_command(6, g.default_texture, {0, 0, 1, 1}, .Textured)
 }
 
-draw_rectangle_outline :: proc(rect: Rect, color: Color) {
-    draw_rectangle({rect.x, rect.y, 1, rect.h}, color)              // left side
-    draw_rectangle({rect.x + rect.w - 1, rect.y, 1, rect.h}, color) // right side
-    draw_rectangle({rect.x, rect.y, rect.w, 1}, color)              // top side
-    draw_rectangle({rect.x, rect.y + rect.h - 1, rect.w, 1}, color) // bottom side
+draw_text :: proc(rect: Rect, text: string, color := WHITE) {
+    bytes := transmute([]u8)text
+    for b, i in bytes {
+        model_matrix :=
+            linalg.matrix4_translate_f32({rect.x + (rect.w) * f32(i), rect.y, 0}) *
+            linalg.matrix4_scale_f32({rect.w, rect.h, 1})
+        vertices := TEMPLATE_VERTEX
+        for &vertex in vertices {
+            vertex.color = color
+            vertex.pos = (model_matrix * [4]f32{vertex.pos.x, vertex.pos.y, vertex.pos.z, 1}).xyz
+            append(&batch_vertices, vertex)
+        }
+        add_draw_command(6, g.default_font_texture, {(1./21) * f32(b%48), 0, 1./21, 1}, .Textured)
+    }
+
+}
+
+add_draw_command :: proc(index_count: u32, texture: ^sdl.GPUTexture, uv: Rect, shader_type: Shader_Type) {
+	command_count := len(draw_commands)
+	if command_count == 0 {
+		append(
+			&draw_commands,
+			(Draw_Command) {
+				texture = texture,
+                uv = uv,
+				pipeline_type = shader_type,
+				first_index = 0,
+				index_count = index_count,
+                view_matrix = g.view_matrix
+			},
+		)
+		return
+	}
+
+	prev_command := &draw_commands[command_count - 1]
+    if prev_command.pipeline_type == shader_type &&
+            prev_command.texture == texture &&
+            prev_command.view_matrix == g.view_matrix &&
+            prev_command.uv == uv {
+        prev_command.index_count += index_count
+	} else {
+        append(
+            &draw_commands,
+            (Draw_Command) {
+                texture = texture,
+                uv = uv,
+                pipeline_type = shader_type,
+                first_index = prev_command.index_count + prev_command.first_index,
+                index_count = index_count,
+                view_matrix = g.view_matrix
+            },
+        )
+	}
 }
 
 present :: proc() {
@@ -338,6 +364,7 @@ present :: proc() {
 	for &dc in draw_commands {
 		sdl.BindGPUGraphicsPipeline(render_pass, g.pipelines[dc.pipeline_type])
         sdl.PushGPUVertexUniformData(cmd_buf, 1, &dc.view_matrix, size_of(dc.view_matrix))
+        sdl.PushGPUVertexUniformData(cmd_buf, 2, &dc.uv, size_of(dc.uv))
 		sdl.BindGPUFragmentSamplers(
 			render_pass,
 			0,
