@@ -22,6 +22,6 @@ layout(location = 1) out vec4 frag_color;
 
 void main() {
     gl_Position = proj * view * vec4(pos, 1);
-    frag_uv = uv * scale + offset;
+    frag_uv = uv;
     frag_color = color;
 }

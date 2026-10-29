@@ -140,7 +140,7 @@ step :: proc() -> bool {
         s.draw_rectangle_outline(recompute_collision_box(e), s.RED)
     }
 
-    s.draw_text({50,50,10,10}, s.get_fps())
+    s.draw_text({50,50,10,10}, "12346789")
     s.present()
 
     return !s.update()

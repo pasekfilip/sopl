@@ -38,7 +38,6 @@ Camera :: struct {
 
 Draw_Command :: struct {
     texture:        ^sdl.GPUTexture,
-    uv:             Rect,
     pipeline_type:  Shader_Type,
     first_index:    u32,
     index_count:    u32,
@@ -236,7 +235,7 @@ draw_circle :: proc(position: Vec2, r: f32, color: Color, segments := 16) {
 		}
 	}
 
-	add_draw_command(u32(6 * segments), g.default_texture, {0, 0, 1, 1}, .Textured)
+	add_draw_command(u32(6 * segments), g.default_texture, .Textured)
 }
 
 draw_rectangle_outline :: proc(rect: Rect, color: Color) {
@@ -259,7 +258,7 @@ draw_rectangle :: proc(rect: Rect, color: Color, rotation: f32 = 0) {
 		append(&batch_vertices, vertex)
 	}
 
-	add_draw_command(6, g.default_texture, {0, 0, 1, 1}, .Textured)
+	add_draw_command(6, g.default_texture, .Textured)
 }
 
 draw_text :: proc(rect: Rect, text: string, color := WHITE) {
@@ -272,21 +271,21 @@ draw_text :: proc(rect: Rect, text: string, color := WHITE) {
         for &vertex in vertices {
             vertex.color = color
             vertex.pos = (model_matrix * [4]f32{vertex.pos.x, vertex.pos.y, vertex.pos.z, 1}).xyz
+            vertex.uv *= {1./21, 1}
+            vertex.uv += {(1./21) * f32(b%48), 0}
             append(&batch_vertices, vertex)
         }
-        add_draw_command(6, g.default_font_texture, {(1./21) * f32(b%48), 0, 1./21, 1}, .Textured)
+        add_draw_command(6, g.default_font_texture, .Textured)
     }
-
 }
 
-add_draw_command :: proc(index_count: u32, texture: ^sdl.GPUTexture, uv: Rect, shader_type: Shader_Type) {
+add_draw_command :: proc(index_count: u32, texture: ^sdl.GPUTexture, shader_type: Shader_Type) {
 	command_count := len(draw_commands)
 	if command_count == 0 {
 		append(
 			&draw_commands,
 			(Draw_Command) {
 				texture = texture,
-                uv = uv,
 				pipeline_type = shader_type,
 				first_index = 0,
 				index_count = index_count,
@@ -299,15 +298,13 @@ add_draw_command :: proc(index_count: u32, texture: ^sdl.GPUTexture, uv: Rect, s
 	prev_command := &draw_commands[command_count - 1]
     if prev_command.pipeline_type == shader_type &&
             prev_command.texture == texture &&
-            prev_command.view_matrix == g.view_matrix &&
-            prev_command.uv == uv {
+            prev_command.view_matrix == g.view_matrix {
         prev_command.index_count += index_count
 	} else {
         append(
             &draw_commands,
             (Draw_Command) {
                 texture = texture,
-                uv = uv,
                 pipeline_type = shader_type,
                 first_index = prev_command.index_count + prev_command.first_index,
                 index_count = index_count,
@@ -364,7 +361,6 @@ present :: proc() {
 	for &dc in draw_commands {
 		sdl.BindGPUGraphicsPipeline(render_pass, g.pipelines[dc.pipeline_type])
         sdl.PushGPUVertexUniformData(cmd_buf, 1, &dc.view_matrix, size_of(dc.view_matrix))
-        sdl.PushGPUVertexUniformData(cmd_buf, 2, &dc.uv, size_of(dc.uv))
 		sdl.BindGPUFragmentSamplers(
 			render_pass,
 			0,
