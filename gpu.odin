@@ -11,8 +11,8 @@ Shader_Type :: enum {
 	Textured,
 }
 
-quad_vert := #load("shaders/spv_quad.vert")
-quad_frag := #load("shaders/spv_quad.frag")
+quad_vert := #load("shaders/quad.vert.spv")
+quad_frag := #load("shaders/quad.frag.spv")
 
 font_atlas := #load("text-atlas.png")
 
