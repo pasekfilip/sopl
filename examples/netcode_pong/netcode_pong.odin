@@ -164,8 +164,22 @@ step :: proc() -> bool {
         p1_gate_collision := g.ball.x <= 0
         p2_gate_collision := g.ball.x >= WIDTH
 
-        if p1_collision || p2_collision {
-            g.ball.velocity.x *= -1.2
+        top_bounce_collision    := g.ball.y <= 0
+        bottom_bounce_collision := g.ball.y >= HEIGHT
+
+        if top_bounce_collision || bottom_bounce_collision {
+            g.ball.velocity.y *= -1
+        }
+
+        if p1_collision {
+            y_diff := g.ball.y - (g.p1.y + g.p1.h/2)
+            g.ball.velocity.y += 10 * y_diff
+            g.ball.velocity.x *= -1.1
+        }
+        if p2_collision {
+            y_diff := g.ball.y - (g.p2.y + g.p2.h/2)
+            g.ball.velocity.y += 10 * y_diff
+            g.ball.velocity.x *= -1.1
         }
 
         if p1_gate_collision {
@@ -211,7 +225,7 @@ step :: proc() -> bool {
     s.draw_rectangle(g.p1.rect, s.SKYBLUE)
     s.draw_rectangle(g.p2.rect, s.MAROON)
 
-    s.draw_circle({g.ball.x, g.ball.y}, g.ball.w, s.RED)
+    s.draw_circle({g.ball.x, g.ball.y}, g.ball.w, s.YELLOW)
 
     s.present()
     free_all(context.temp_allocator)
