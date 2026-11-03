@@ -121,7 +121,7 @@ init :: proc() {
         }
     }
 
-    s.init_window(fmt.ctprintf("pong %s", role_names[n.role]), WIDTH, HEIGHT, .VSYNC)
+    s.init_window(WIDTH, HEIGHT, fmt.ctprintf("pong %s", role_names[n.role]), .VSYNC)
 }
 
 step :: proc() -> bool {

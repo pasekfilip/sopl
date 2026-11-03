@@ -100,7 +100,7 @@ init :: proc() {
         on_collision = proc(e: ^Entity, e2: ^Entity) { }
     })
 
-    s.init_window("platformer", WIDTH, HEIGHT, .VSYNC)
+    s.init_window(WIDTH, HEIGHT, "platformer", .VSYNC)
 }
 
 // so we are doing update collision draw

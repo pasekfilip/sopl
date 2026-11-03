@@ -10,24 +10,31 @@ import sdl "vendor:sdl3"
 import "core:mem"
 
 State :: struct {
-    device:                ^sdl.GPUDevice,
-    display:               sdl.DisplayID,
-    window:                ^sdl.Window,
-    pipelines:             [Shader_Type]^sdl.GPUGraphicsPipeline,
-    last_tick:             time.Tick,
-    dt:                    f32,
-    projection:            matrix[4, 4]f32,
-    previous_press:        #sparse[sdl.Scancode]bool,
-    current_press:         #sparse[sdl.Scancode]bool,
-    default_texture:       ^sdl.GPUTexture,
-    default_font_texture:  ^sdl.GPUTexture,
-    default_sampler:       ^sdl.GPUSampler,
-    transfer_buf:          ^sdl.GPUTransferBuffer,
-    index_buffer:          ^sdl.GPUBuffer,
-    vertex_buffer:         ^sdl.GPUBuffer,
-    clear_color:           Color,
-    target_fps:            u32,
-    view_matrix:           matrix[4, 4]f32,
+    device:                   ^sdl.GPUDevice,
+    display:                  sdl.DisplayID,
+    window:                   ^sdl.Window,
+    window_width:             i32,
+    window_height:            i32,
+    window_pixel_width:       i32,
+    window_pixel_height:      i32,
+    pipelines:                [Shader_Type]^sdl.GPUGraphicsPipeline,
+    last_tick:                time.Tick,
+    dt:                       f32,
+    projection:               matrix[4, 4]f32,
+    pre_press:                #sparse[sdl.Scancode]bool,
+    cur_press:                #sparse[sdl.Scancode]bool,
+    cur_mouse_button_press:   bool,
+    prev_mouse_button_press:  bool,
+    mouse_pos:                Vec2,
+    default_texture:          ^sdl.GPUTexture,
+    default_font_texture:     ^sdl.GPUTexture,
+    default_sampler:          ^sdl.GPUSampler,
+    transfer_buf:             ^sdl.GPUTransferBuffer,
+    index_buffer:             ^sdl.GPUBuffer,
+    vertex_buffer:            ^sdl.GPUBuffer,
+    clear_color:              Color,
+    target_fps:               u32,
+    view_matrix:              matrix[4, 4]f32,
 }
 
 Camera :: struct {
@@ -42,6 +49,11 @@ Draw_Command :: struct {
     first_index:    u32,
     index_count:    u32,
     view_matrix:    matrix[4, 4]f32,
+}
+
+Texture :: struct {
+	width, height: u32,
+	texture:       ^sdl.GPUTexture,
 }
 
 Physical_KeyCode :: sdl.Scancode
@@ -106,12 +118,12 @@ g: ^State
 batch_vertices: [dynamic; MAX_VERTICES]Vertex
 draw_commands: [dynamic; BATCH_QUAD_CAPACITY]Draw_Command
 
-init_window :: proc(title: cstring, width: u32, height: u32, mode := PresentMode.VSYNC) {
+init_window :: proc(width: u32, height: u32, title: cstring, mode: sdl.WindowFlags) {
 	context.logger = log.create_console_logger()
 	ensure(sdl.Init({.VIDEO}), string(sdl.GetError()))
 
 	g = new(State)
-	g.window = sdl.CreateWindow(title, i32(width), i32(height), {.HIGH_PIXEL_DENSITY})
+	g.window = sdl.CreateWindow(title, i32(width), i32(height), mode + {.HIGH_PIXEL_DENSITY})
     g.display = sdl.GetPrimaryDisplay()
 	g.last_tick = time.tick_now()
     set_camera(Camera { zoom = 1 }) 
@@ -141,8 +153,9 @@ init_window :: proc(title: cstring, width: u32, height: u32, mode := PresentMode
 
 	g.projection = sex_ortho(0, f32(width), 0, f32(height))
 
+    // set vsync as default can be adjusted while running
 	ensure(
-		sdl.SetGPUSwapchainParameters(g.device, g.window, sdl.GPUSwapchainComposition.SDR, mode),
+		sdl.SetGPUSwapchainParameters(g.device, g.window, sdl.GPUSwapchainComposition.SDR, .VSYNC),
 		string(sdl.GetError()),
 	)
 }
@@ -156,8 +169,17 @@ close_window :: proc() {
 	sdl.Quit()
 }
 
+get_window_width :: proc() -> i32 {
+    return g.window_width
+}
+
+get_window_height :: proc() -> i32 {
+    return g.window_height
+}
+
 update :: proc() -> bool {
-	g.previous_press = g.current_press
+	g.pre_press = g.cur_press
+	g.prev_mouse_button_press = g.cur_mouse_button_press
 	g.dt = f32(time.duration_seconds(time.tick_lap_time(&g.last_tick)))
 
 	ev: sdl.Event
@@ -167,13 +189,95 @@ update :: proc() -> bool {
 			return false
 		case .KEY_DOWN:
 			if ev.key.scancode == .ESCAPE do return false
-			g.current_press[ev.key.scancode] = true
+			g.cur_press[ev.key.scancode] = true
 		case .KEY_UP:
-			g.current_press[ev.key.scancode] = false
+			g.cur_press[ev.key.scancode] = false
+		case .MOUSE_MOTION:
+            g.mouse_pos = {ev.motion.x, ev.motion.y}
+		case .MOUSE_BUTTON_DOWN:
+            g.cur_mouse_button_press = true
+		case .MOUSE_BUTTON_UP:
+            g.cur_mouse_button_press = false
+        case .WINDOW_RESIZED, .WINDOW_SHOWN:
+            sdl.GetWindowSize(g.window, &g.window_width, &g.window_height)
 		}
 	}
 
 	return true
+}
+
+present :: proc() {
+	mem_ptr := sdl.MapGPUTransferBuffer(g.device, g.transfer_buf, true)
+	mem.copy(mem_ptr, raw_data(&batch_vertices), len(batch_vertices) * size_of(Vertex))
+	sdl.UnmapGPUTransferBuffer(g.device, g.transfer_buf)
+
+	cmd_buf := sdl.AcquireGPUCommandBuffer(g.device)
+	copy_pass := sdl.BeginGPUCopyPass(cmd_buf)
+
+	sdl.UploadToGPUBuffer(
+		copy_pass,
+		{transfer_buffer = g.transfer_buf},
+		{buffer = g.vertex_buffer, size = u32(len(batch_vertices) * size_of(Vertex))},
+		false,
+	)
+	sdl.EndGPUCopyPass(copy_pass)
+
+	swapchain_tex: ^sdl.GPUTexture
+	ensure(
+		sdl.WaitAndAcquireGPUSwapchainTexture(cmd_buf, g.window, &swapchain_tex, nil , nil),
+		string(sdl.GetError()),
+	)
+    g.projection = sex_ortho(0, f32(g.window_width), 0, f32(g.window_height))
+
+	if swapchain_tex == nil { 	// the window is minimaized (wayland not rly)
+		ensure(sdl.SubmitGPUCommandBuffer(cmd_buf), string(sdl.GetError()))
+	}
+
+	color_target := sdl.GPUColorTargetInfo {
+		texture     = swapchain_tex,
+		load_op     = .CLEAR,
+		clear_color = (sdl.FColor)(linalg.array_cast(g.clear_color, f32) / 255),
+		store_op    = .STORE,
+	}
+
+	render_pass := sdl.BeginGPURenderPass(cmd_buf, &color_target, 1, nil)
+	sdl.BindGPUVertexBuffers(render_pass, 0, &(sdl.GPUBufferBinding{buffer = g.vertex_buffer}), 1)
+	sdl.BindGPUIndexBuffer(render_pass, {buffer = g.index_buffer}, ._16BIT)
+	sdl.PushGPUVertexUniformData(cmd_buf, 0, &g.projection, size_of(g.projection))
+
+	for &dc in draw_commands {
+		sdl.BindGPUGraphicsPipeline(render_pass, g.pipelines[dc.pipeline_type])
+        sdl.PushGPUVertexUniformData(cmd_buf, 1, &dc.view_matrix, size_of(dc.view_matrix))
+		sdl.BindGPUFragmentSamplers(
+			render_pass,
+			0,
+			&(sdl.GPUTextureSamplerBinding {
+					sampler = g.default_sampler,
+					texture = dc.texture,
+				}),
+			1,
+		)
+
+		sdl.DrawGPUIndexedPrimitives(
+			render_pass,
+			dc.index_count,
+			1,
+			dc.first_index,
+			0,
+			0,
+		)
+	}
+
+	sdl.EndGPURenderPass(render_pass)
+	ensure(sdl.SubmitGPUCommandBuffer(cmd_buf), string(sdl.GetError()))
+    clear(&draw_commands)
+    clear(&batch_vertices)
+
+    if g.target_fps > 0 {
+        target_sec := 1/f64(g.target_fps)
+        dt := time.duration_seconds(time.tick_since(g.last_tick))
+        time.sleep((time.Duration)((target_sec - dt) * f64(time.Second)))
+    }
 }
 
 get_delta_time :: proc() -> f32 {
@@ -185,11 +289,23 @@ get_fps :: proc() -> string {
 }
 
 is_key_down :: proc(code: Physical_KeyCode) -> bool {
-	return g.current_press[code]
+	return g.cur_press[code]
 }
 
 is_key_pressed :: proc(code: Physical_KeyCode) -> bool {
-	return g.current_press[code] && !g.previous_press[code]
+	return g.cur_press[code] && !g.pre_press[code]
+}
+
+get_mouse_position :: proc() -> Vec2 {
+    return g.mouse_pos
+}
+
+is_mouse_button_down :: proc() -> bool {
+    return g.cur_mouse_button_press
+}
+
+is_mouse_button_pressed :: proc() -> bool {
+    return g.cur_mouse_button_press && !g.prev_mouse_button_press
 }
 
 clear_background :: proc(color: Color) {
@@ -198,6 +314,10 @@ clear_background :: proc(color: Color) {
 
 set_fps :: proc(target_fps: u32) {
 	g.target_fps = target_fps
+}
+
+hide_cursor :: proc() -> bool {
+    return sdl.HideCursor()
 }
 
 set_camera :: proc(camera: Camera) {
@@ -312,90 +432,6 @@ add_draw_command :: proc(index_count: u32, texture: ^sdl.GPUTexture, shader_type
             },
         )
 	}
-}
-
-present :: proc() {
-	mem_ptr := sdl.MapGPUTransferBuffer(g.device, g.transfer_buf, true)
-	mem.copy(mem_ptr, raw_data(&batch_vertices), len(batch_vertices) * size_of(Vertex))
-	sdl.UnmapGPUTransferBuffer(g.device, g.transfer_buf)
-
-	cmd_buf := sdl.AcquireGPUCommandBuffer(g.device)
-	copy_pass := sdl.BeginGPUCopyPass(cmd_buf)
-
-	sdl.UploadToGPUBuffer(
-		copy_pass,
-		{transfer_buffer = g.transfer_buf},
-		{buffer = g.vertex_buffer, size = u32(len(batch_vertices) * size_of(Vertex))},
-		false,
-	)
-	sdl.EndGPUCopyPass(copy_pass)
-
-	swapchain_tex: ^sdl.GPUTexture
-    swap_w, swap_h: u32
-	ensure(
-		sdl.WaitAndAcquireGPUSwapchainTexture(cmd_buf, g.window, &swapchain_tex, &swap_w, &swap_h),
-		string(sdl.GetError()),
-	)
-    // TODO: when i dont adjust to the swap chain texture i just get stretched space which might be what i want actually
-    // its true that the aspect ratio might not match but bcs im changing the projection it moves everything in the world
-    // so its not one to one
-    // the moment i stretch the projection im moving also stuff in my world
-    // g.projection = sex_ortho(0, f32(swap_w), 0, f32(swap_h))
-
-	if swapchain_tex == nil { 	// the window is minimaized (wayland not rly)
-		ensure(sdl.SubmitGPUCommandBuffer(cmd_buf), string(sdl.GetError()))
-	}
-
-	color_target := sdl.GPUColorTargetInfo {
-		texture     = swapchain_tex,
-		load_op     = .CLEAR,
-		clear_color = (sdl.FColor)(linalg.array_cast(g.clear_color, f32) / 255),
-		store_op    = .STORE,
-	}
-
-	render_pass := sdl.BeginGPURenderPass(cmd_buf, &color_target, 1, nil)
-	sdl.BindGPUVertexBuffers(render_pass, 0, &(sdl.GPUBufferBinding{buffer = g.vertex_buffer}), 1)
-	sdl.BindGPUIndexBuffer(render_pass, {buffer = g.index_buffer}, ._16BIT)
-	sdl.PushGPUVertexUniformData(cmd_buf, 0, &g.projection, size_of(g.projection))
-
-	for &dc in draw_commands {
-		sdl.BindGPUGraphicsPipeline(render_pass, g.pipelines[dc.pipeline_type])
-        sdl.PushGPUVertexUniformData(cmd_buf, 1, &dc.view_matrix, size_of(dc.view_matrix))
-		sdl.BindGPUFragmentSamplers(
-			render_pass,
-			0,
-			&(sdl.GPUTextureSamplerBinding {
-					sampler = g.default_sampler,
-					texture = dc.texture,
-				}),
-			1,
-		)
-
-		sdl.DrawGPUIndexedPrimitives(
-			render_pass,
-			dc.index_count,
-			1,
-			dc.first_index,
-			0,
-			0,
-		)
-	}
-
-	sdl.EndGPURenderPass(render_pass)
-	ensure(sdl.SubmitGPUCommandBuffer(cmd_buf), string(sdl.GetError()))
-    clear(&draw_commands)
-    clear(&batch_vertices)
-
-    if g.target_fps > 0 {
-        target_sec := 1/f64(g.target_fps)
-        dt := time.duration_seconds(time.tick_since(g.last_tick))
-        time.sleep((time.Duration)((target_sec - dt) * f64(time.Second)))
-    }
-}
-
-Texture :: struct {
-	width, height: u32,
-	texture:       ^sdl.GPUTexture,
 }
 
 load_texture :: proc(path: string) -> Texture {

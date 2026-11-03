@@ -7,7 +7,7 @@ main :: proc() {
 	width :: 1920
 	height :: 1080
 
-	s.init_window("delta time", width, height, .VSYNC)
+	s.init_window(width, height, "delta time", .VSYNC)
 	defer s.close_window()
 
 	circle_1 := [2]f32{100, 400}

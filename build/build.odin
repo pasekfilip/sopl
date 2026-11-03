@@ -5,7 +5,6 @@ import "core:fmt"
 import "core:time"
 import "core:strings"
 
-
 main :: proc() {
     files, err := os.read_all_directory_by_path("./shaders", context.allocator)
     defer os.file_info_slice_delete(files, context.allocator)
