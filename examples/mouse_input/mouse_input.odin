@@ -13,14 +13,22 @@ main :: proc() {
         h := f32(s.get_window_height())
         
         s.clear_background(s.DARKGRAY)
-        draw_button({w/2, h/2, 300, 100}, "CLIENT", s.BLUE)
+        if gui_button({(w/2) - 150, (h/2) -50, 300, 100}, "HOST", s.BLUE) {
+            s.draw_text({100, 100, 20, 20}, "YES", s.WHITE)
+        }
         s.present()
     }
 }
 
-draw_button :: proc(rect: s.Rect, text: string, color: s.Color) {
-    // character size and height is 8 pixels does that matter ?
-    s.draw_rectangle(rect, s.BLUE)
-    // text_rect := s.Rect{rect.x + 20, rect.y + 20, rect.w - 20, rect.h -20 }
-    // s.draw_text(text_rect, text, s.WHITE)
+// lets add normal hover pressed
+gui_button :: proc(rect: s.Rect, text: string, color: s.Color) -> bool {
+    FONT_SIZE :: 16
+    s.draw_rectangle(rect, color)
+    text_rect := s.Rect{rect.x + rect.w/2 - (FONT_SIZE/2)*f32(len(text)), rect.y + rect.h/2 - 8, FONT_SIZE, FONT_SIZE}
+    s.draw_text(text_rect, text, s.WHITE)
+
+    s.is_mouse_button_pressed() or_return
+    mouse_pos := s.get_mouse_position()
+    collided, _ := s.aabb(rect, {mouse_pos.x, mouse_pos.y, 5, 5})
+    return collided
 }
