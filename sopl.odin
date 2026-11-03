@@ -388,11 +388,16 @@ draw_text :: proc(rect: Rect, text: string, color := WHITE) {
             linalg.matrix4_translate_f32({rect.x + (rect.w) * f32(i), rect.y, 0}) *
             linalg.matrix4_scale_f32({rect.w, rect.h, 1})
         vertices := TEMPLATE_VERTEX
+        glyph_index := b-32
+        glyph_index_x := f32(glyph_index%DEFAULT_FONT_COLUMNS)
+        glyph_index_y := f32(glyph_index/DEFAULT_FONT_COLUMNS)
+        uv_scale := Vec2{1./DEFAULT_FONT_COLUMNS, 1./DEFAULT_FONT_ROWS}
+        uv_offset := Vec2{glyph_index_x, glyph_index_y} * uv_scale
         for &vertex in vertices {
             vertex.color = color
             vertex.pos = (model_matrix * [4]f32{vertex.pos.x, vertex.pos.y, vertex.pos.z, 1}).xyz
-            vertex.uv *= {1./43, 1}
-            vertex.uv += {(1./43) * f32(b%48), 0}
+            vertex.uv *= uv_scale
+            vertex.uv += uv_offset
             append(&batch_vertices, vertex)
         }
         add_draw_command(6, g.default_font_texture, .Textured)
