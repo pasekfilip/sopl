@@ -40,7 +40,7 @@ gui_button :: proc(rect: Rect, text: string, color: Color) -> bool {
 /*
     The input width is based on the text_buf lenght
 */
-gui_input :: proc(pos: Vec2, height: f32, text_buf: []u8) {
+gui_input :: proc(pos: Vec2, height: f32, text_buf: []u8) -> int {
     font_scale := u32(height/12)
     text_size := get_text_size(int(font_scale), len(text_buf))
     mouse_pos := get_mouse_position()
@@ -54,7 +54,7 @@ gui_input :: proc(pos: Vec2, height: f32, text_buf: []u8) {
     if text_count == -1 do text_count = len(text_buf)
     draw_text({pos.x, pos.y}, string(text_buf[:text_count]), font_scale)
 
-    if !collided { stop_text_input(); return }
+    if !collided { stop_text_input(); return text_count}
     start_text_input()
     char := get_char_pressed()
 
@@ -74,6 +74,7 @@ gui_input :: proc(pos: Vec2, height: f32, text_buf: []u8) {
 
         text_buf[text_count] = char
     }
+    return text_count
 }
 
 show_center :: proc() {
