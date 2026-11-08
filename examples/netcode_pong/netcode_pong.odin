@@ -7,17 +7,19 @@ import "core:net"
 import "core:strings"
 import s "../../"
 
-WIDTH    :: 640
-HEIGHT   :: 390
+WIDTH    :: 1280
+HEIGHT   :: 720
 HELLO    :: string("hello")
 WELCOME  :: string("welcome")
 PADDLE_WIDTH :: 10
 PADDLE_HEIGHT :: 60
 
-role_names := [Network_Role]string {
-    .Host   = "host",
-    .Client = "client"
-}
+BUTTON_W      :: 300
+BUTTON_H      :: 100
+INPUT_W       :: 700
+INPUT_H       :: 100
+BUTTON_COLOR  :: s.MAROON
+GAP           :: 20
 
 g: Packet_Game_State
 n: Network_State
@@ -26,7 +28,7 @@ Network_State :: struct {
     role:                    Network_Role,
     socket:                  net.UDP_Socket,
     endpoint:                net.Endpoint,
-    host_addr:               string,
+    host_addr:               [15]u8,
     conn_established:        bool
 }
 
@@ -90,7 +92,7 @@ init :: proc() {
         }
     }
 
-    s.init_window(WIDTH, HEIGHT, fmt.ctprintf("pong %s", role_names[n.role]), {})
+    s.init_window(WIDTH, HEIGHT, "pong af", {})
 }
 
 /*
@@ -102,14 +104,60 @@ step :: proc() -> bool {
         return false
     }
 
-    if !n.conn_established {
-    }
+    w := f32(s.get_window_width())
+    h := f32(s.get_window_height())
+
+    s.clear_background(s.DARKGRAY)
+    s.stack_layout({w/2, h/2}, GAP)
 
     switch n.role {
+    case .None:
+        mouse_pos := s.get_mouse_position()
+        s.draw_rectangle({mouse_pos.x, mouse_pos.y, 5, 5}, s.WHITE)
+
+        title := "Crazy multiplayer pong!!"
+        text_pos := s.move_cursor(s.get_text_size(10, len(title)))
+        s.draw_text({text_pos.x, text_pos.y}, title, 10)
+
+        if s.gui_button(s.move_cursor({BUTTON_W, BUTTON_H}), "Host", BUTTON_COLOR) {
+            n.role = .Host
+        }
+        if s.gui_button(s.move_cursor({BUTTON_W, BUTTON_H}), "Client", BUTTON_COLOR) {
+            n.role = .Client
+        }
+        if s.gui_button(s.move_cursor({BUTTON_W, BUTTON_H}), "Exit", BUTTON_COLOR) {
+            s.close_window()
+        }
+
+        s.present()
+        return true
+    
     case .Host:
         if !n.conn_established {
-            setup_host()
-            break
+            if n.socket == 0 {
+                n.socket = bind_udp_socket("0.0.0.0", 9000)
+                net.set_blocking(n.socket, false)
+            }
+            listen_for_hello()
+
+            mouse_pos := s.get_mouse_position()
+            s.draw_rectangle({mouse_pos.x, mouse_pos.y, 5, 5}, s.WHITE)
+
+            title := "Crazy multiplayer pong!!"
+            text_pos := s.move_cursor(s.get_text_size(10, len(title)))
+            s.draw_text({text_pos.x, text_pos.y}, title, 10)
+
+            wating_text := "Wating for client"
+            text_pos = s.move_cursor(s.get_text_size(5, len(wating_text)))
+            s.draw_text({text_pos.x, text_pos.y}, wating_text, 5, s.YELLOW)
+            if s.gui_button(s.move_cursor({BUTTON_W, BUTTON_H}), "Cancel", BUTTON_COLOR) {
+                n.role = .None
+                n.socket = 0
+                net.close(n.socket)
+            }
+
+            s.present()
+            return true
         }
 
         buf: [size_of(Packet_Input)]u8 
@@ -170,9 +218,24 @@ step :: proc() -> bool {
 
     case .Client:
         if !n.conn_established {
-            setup_client(n.host_addr, 9000)
+            if n.socket == 0 {
+                n.socket, _ = net.make_unbound_udp_socket(.IP4)
+                net.set_blocking(n.socket, false)
+            }
+
+            rect := s.move_cursor({INPUT_W, INPUT_H})
+            count := s.gui_input({rect.x, rect.y}, rect.h, n.host_addr[:])
+            if s.gui_button(s.move_cursor({BUTTON_W, BUTTON_H}), "Connect", BUTTON_COLOR) {
+                send_hello_to(string(n.host_addr[:count]), 9000)
+            }
+            if s.gui_button(s.move_cursor({BUTTON_W, BUTTON_H}), "Cancel", BUTTON_COLOR) {
+                n.role = .None
+                net.close(n.socket)
+            }
+
             listen_for_welcome()
-            break
+            s.present()
+            return true
         }
         input_packet: Packet_Input
         if s.is_key_down(.W) do input_packet.input += {.W}
@@ -182,50 +245,13 @@ step :: proc() -> bool {
         net.send_udp(n.socket, buf[:], n.endpoint)
 
         listen_for_game_state()
-
-    case .None:
-        BUTTON_W      :: 300
-        BUTTON_H      :: 100
-        BUTTON_COLOR  :: s.MAROON
-        GAP           :: 20
-        w := f32(s.get_window_width())
-        h := f32(s.get_window_height())
-
-        s.clear_background(s.DARKGRAY)
-        ui_camera := s.Camera{
-            offset = {w/2, h/2},
-            zoom = 1
-        }
-        mouse_pos := s.get_mouse_position()
-        s.draw_rectangle({mouse_pos.x, mouse_pos.y, 5, 5}, s.WHITE)
-
-        s.set_camera(ui_camera)
-
-        text := "Crazy multiplayer pong!!"
-        s.draw_text({-f32(len(text)*15), -BUTTON_H/2 - (3*BUTTON_H) - GAP, 30, 60}, text)
-        if s.gui_button({-BUTTON_W/2, -BUTTON_H/2 - BUTTON_H - GAP, BUTTON_W, BUTTON_H}, "Host", BUTTON_COLOR) {
-            if n.socket 
-        }
-        if s.gui_button({-BUTTON_W/2, -BUTTON_H/2, BUTTON_W, BUTTON_H}, "Client", BUTTON_COLOR) {
-
-        }
-
-        switch n.role {
-        case .Host:
-            n.socket = bind_udp_socket("0.0.0.0", 9000)
-        case .Client:
-            n.socket, _ = net.make_unbound_udp_socket(.IP4)
-        }
-        net.set_blocking(n.socket, false)
-
-        s.present()
-        return true
     }
+
 
     s.clear_background(s.DARKGRAY)
 
-    s.draw_text({260, 0, 50, 50}, fmt.tprint(g.p1_points))
-    s.draw_text({325, 0, 50, 50}, fmt.tprint(g.p2_points))
+    s.draw_text({260, 0}, fmt.tprint(g.p1_points), 20)
+    s.draw_text({325, 0}, fmt.tprint(g.p2_points), 20)
 
     s.draw_rectangle({315, 0, 5, 390}, s.WHITE, 0)
     s.draw_rectangle(g.p1.rect, s.SKYBLUE)
@@ -239,11 +265,10 @@ step :: proc() -> bool {
 }
 
 end :: proc() {
-    // net.close(sock)
     s.close_window()
 }
 
-setup_host :: proc() {
+listen_for_hello :: proc() {
     buf: [len(HELLO)]u8
     _, remote_endpoint, err_recv := net.recv_udp(n.socket, buf[:])
     if err_recv != nil {
@@ -251,6 +276,7 @@ setup_host :: proc() {
         return
     }
     n.endpoint = remote_endpoint
+    fmt.println(buf[:])
 
     if string(buf[:]) == HELLO {
         n.conn_established = true
@@ -264,7 +290,7 @@ setup_host :: proc() {
     }
 }
 
-setup_client :: proc(ip: string, port: int) {
+send_hello_to :: proc(ip: string, port: int) {
     host_addr, ok := net.parse_ip4_address(ip)
     if !ok {
         fmt.println("Failed to parse IP address")
@@ -286,7 +312,7 @@ listen_for_welcome :: proc() {
     buf: [len(WELCOME)]u8
     _, _, err_recv := net.recv_udp(n.socket, buf[:])
     if err_recv != nil {
-        fmt.println("Failed to recive data", err_recv)
+        // fmt.println("Failed to recive data", err_recv)
         return
     }
     if string(buf[:]) == WELCOME {
