@@ -6,8 +6,6 @@ import _ "core:image/png"
 import sdl "vendor:sdl3"
 import "core:mem"
 
-DEFAULT_FONT_COLUMNS :: 16
-DEFAULT_FONT_ROWS    :: 8
 
 Shader_Type :: enum {
 	Wireframe,

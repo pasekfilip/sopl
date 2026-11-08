@@ -7,14 +7,14 @@ main :: proc() {
 	width :: 1920
 	height :: 1080
 
-	s.init_window(width, height, "delta time", .VSYNC)
+	s.init_window(width, height, "delta time", {})
 	defer s.close_window()
 
 	circle_1 := [2]f32{100, 400}
 	circle_2 := [2]f32{100, 600}
 
-    speed: f64 = 5
-	for !s.update() {
+    speed: f32 = 5
+	for s.update() {
         dt := s.get_delta_time()
 
 		is_culled :: proc(x: f32) -> bool {return x >= width}
@@ -25,6 +25,7 @@ main :: proc() {
 		circle_2.x += speed
 
         s.clear_background(s.DARKGRAY)
+        s.draw_fps({0, 0})
 		s.draw_circle(circle_1, 100, s.WHITE)
 		s.draw_circle(circle_2, 100, s.WHITE)
 		s.present()

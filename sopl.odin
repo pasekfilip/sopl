@@ -8,6 +8,7 @@ import "core:math/linalg"
 import "core:time"
 import sdl "vendor:sdl3"
 import "core:mem"
+import "core:strings"
 
 State :: struct {
     device:                   ^sdl.GPUDevice,
@@ -19,13 +20,16 @@ State :: struct {
     window_pixel_height:      i32,
     pipelines:                [Shader_Type]^sdl.GPUGraphicsPipeline,
     last_tick:                time.Tick,
+    start_tick:              time.Tick,
     dt:                       f32,
     projection:               matrix[4, 4]f32,
+    view_matrix:              matrix[4, 4]f32,
     pre_press:                #sparse[sdl.Scancode]bool,
     cur_press:                #sparse[sdl.Scancode]bool,
     cur_mouse_button_press:   bool,
     prev_mouse_button_press:  bool,
     mouse_pos:                Vec2,
+    char_pressed:             u8,
     default_texture:          ^sdl.GPUTexture,
     default_font_texture:     ^sdl.GPUTexture,
     default_sampler:          ^sdl.GPUSampler,
@@ -34,7 +38,6 @@ State :: struct {
     vertex_buffer:            ^sdl.GPUBuffer,
     clear_color:              Color,
     target_fps:               u32,
-    view_matrix:              matrix[4, 4]f32,
 }
 
 Camera :: struct {
@@ -56,7 +59,7 @@ Texture :: struct {
 	texture:       ^sdl.GPUTexture,
 }
 
-Physical_KeyCode :: sdl.Scancode
+Scancode :: sdl.Scancode
 PresentMode :: sdl.GPUPresentMode
 
 Color :: [4]u8
@@ -126,6 +129,7 @@ init_window :: proc(width: u32, height: u32, title: cstring, mode: sdl.WindowFla
 	g.window = sdl.CreateWindow(title, i32(width), i32(height), mode + {.HIGH_PIXEL_DENSITY})
     g.display = sdl.GetPrimaryDisplay()
 	g.last_tick = time.tick_now()
+	g.start_tick = time.tick_now()
     set_camera(Camera { zoom = 1 }) 
 
 	g.clear_color = WHITE
@@ -179,8 +183,10 @@ get_window_height :: proc() -> i32 {
 
 update :: proc() -> bool {
 	g.pre_press = g.cur_press
+    g.char_pressed = 0
 	g.prev_mouse_button_press = g.cur_mouse_button_press
 	g.dt = f32(time.duration_seconds(time.tick_lap_time(&g.last_tick)))
+    set_camera(Camera { zoom = 1 })
 
 	ev: sdl.Event
 	for sdl.PollEvent(&ev) {
@@ -192,6 +198,8 @@ update :: proc() -> bool {
 			g.cur_press[ev.key.scancode] = true
 		case .KEY_UP:
 			g.cur_press[ev.key.scancode] = false
+		case .TEXT_INPUT:
+            g.char_pressed = ([^]u8)(ev.text.text)[0]
 		case .MOUSE_MOTION:
             g.mouse_pos = {ev.motion.x, ev.motion.y}
 		case .MOUSE_BUTTON_DOWN:
@@ -199,7 +207,7 @@ update :: proc() -> bool {
 		case .MOUSE_BUTTON_UP:
             g.cur_mouse_button_press = false
         case .WINDOW_RESIZED, .WINDOW_SHOWN:
-            sdl.GetWindowSize(g.window, &g.window_width, &g.window_height)
+            sdl.GetWindowSizeInPixels(g.window, &g.window_width, &g.window_height)
 		}
 	}
 
@@ -284,20 +292,44 @@ get_delta_time :: proc() -> f32 {
 	return g.dt
 }
 
+get_ticks :: proc() -> f64 {
+	return time.duration_seconds(time.tick_since(g.start_tick))
+}
+
 get_fps :: proc() -> string {
     return fmt.tprintf("%.0f", 1/g.dt)
 }
 
-is_key_down :: proc(code: Physical_KeyCode) -> bool {
+get_text_size :: proc(font_scale, text_len: int) -> Vec2 {
+    return {
+        f32(font_scale) * DEFAULT_FONT_WIDTH * f32(text_len),
+        f32(font_scale) * DEFAULT_FONT_HEIGHT
+    }
+}
+
+is_key_down :: proc(code: Scancode) -> bool {
 	return g.cur_press[code]
 }
 
-is_key_pressed :: proc(code: Physical_KeyCode) -> bool {
+is_key_pressed :: proc(code: Scancode) -> bool {
 	return g.cur_press[code] && !g.pre_press[code]
 }
 
+start_text_input :: proc() -> bool {
+    return sdl.StartTextInput(g.window)
+}
+
+stop_text_input :: proc() -> bool {
+    return sdl.StopTextInput(g.window)
+}
+
+get_char_pressed :: proc() -> u8 {
+    return g.char_pressed
+}
+
 get_mouse_position :: proc() -> Vec2 {
-    return g.mouse_pos
+    scale := sdl.GetWindowDisplayScale(g.window)
+    return {(g.mouse_pos.x * scale) - g.view_matrix[3][0], (g.mouse_pos.y * scale) - g.view_matrix[3][1]}
 }
 
 is_mouse_button_down :: proc() -> bool {
@@ -381,12 +413,20 @@ draw_rectangle :: proc(rect: Rect, color: Color, rotation: f32 = 0) {
 	add_draw_command(6, g.default_texture, .Textured)
 }
 
-draw_text :: proc(rect: Rect, text: string, color := WHITE) {
+draw_fps :: proc(pos: Vec2) {
+    fps := 1/get_delta_time()
+    buf: [size_of(fps)]u8
+    draw_text(pos, fmt.bprint(buf[:], fps), 10)
+}
+
+draw_text :: proc(pos: Vec2, text: string, font_scale: u32, color := WHITE) {
+    font_height := f32(DEFAULT_FONT_HEIGHT * font_scale)
+    font_width  := f32(DEFAULT_FONT_WIDTH * font_scale)
     bytes := transmute([]u8)text
     for b, i in bytes {
         model_matrix :=
-            linalg.matrix4_translate_f32({rect.x + (rect.w) * f32(i), rect.y, 0}) *
-            linalg.matrix4_scale_f32({rect.w, rect.h, 1})
+            linalg.matrix4_translate_f32({pos.x + font_width * f32(i), pos.y, 0}) *
+            linalg.matrix4_scale_f32({font_width, font_height, 1})
         vertices := TEMPLATE_VERTEX
         glyph_index := b-32
         glyph_index_x := f32(glyph_index%DEFAULT_FONT_COLUMNS)
