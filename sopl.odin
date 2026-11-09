@@ -10,6 +10,27 @@ import sdl "vendor:sdl3"
 import "core:mem"
 import "core:strings"
 
+g: ^State
+batch_vertices: [dynamic; MAX_VERTICES]Vertex
+draw_commands: [dynamic; BATCH_QUAD_CAPACITY]Draw_Command
+
+TEMPLATE_VERTEX: [4]Vertex : {
+	{pos = {0, 1, 1}, uv = {0, 1}},
+	{pos = {1, 1, 1}, uv = {1, 1}},
+	{pos = {1, 0, 1}, uv = {1, 0}},
+	{pos = {0, 0, 1}, uv = {0, 0}},
+}
+
+BATCH_QUAD_CAPACITY :: 3000
+MAX_VERTICES :: BATCH_QUAD_CAPACITY * 4
+MAX_VERTICES_BYTES :: MAX_VERTICES * size_of(Vertex)
+MAX_TRANSFER_BUFFER_SIZE_BYTES :: MAX_VERTICES * size_of(Vertex)
+INDICES_PER_QUAD :: 6
+MAX_INDICES :: BATCH_QUAD_CAPACITY * INDICES_PER_QUAD
+
+Vec3 :: [3]f32
+Vec2 :: [2]f32
+
 State :: struct {
     device:                   ^sdl.GPUDevice,
     display:                  sdl.DisplayID,
@@ -101,25 +122,6 @@ Rect :: struct {
 	x, y, w, h: f32,
 }
 
-Vec3 :: [3]f32
-Vec2 :: [2]f32
-
-TEMPLATE_VERTEX: [4]Vertex : {
-	{pos = {0, 1, 1}, uv = {0, 1}},
-	{pos = {1, 1, 1}, uv = {1, 1}},
-	{pos = {1, 0, 1}, uv = {1, 0}},
-	{pos = {0, 0, 1}, uv = {0, 0}},
-}
-BATCH_QUAD_CAPACITY :: 3000
-MAX_VERTICES :: BATCH_QUAD_CAPACITY * 4
-MAX_VERTICES_BYTES :: MAX_VERTICES * size_of(Vertex)
-MAX_TRANSFER_BUFFER_SIZE_BYTES :: MAX_VERTICES * size_of(Vertex)
-INDICES_PER_QUAD :: 6
-MAX_INDICES :: BATCH_QUAD_CAPACITY * INDICES_PER_QUAD
-
-g: ^State
-batch_vertices: [dynamic; MAX_VERTICES]Vertex
-draw_commands: [dynamic; BATCH_QUAD_CAPACITY]Draw_Command
 
 init_window :: proc(width: u32, height: u32, title: cstring, mode: sdl.WindowFlags) {
 	context.logger = log.create_console_logger()
@@ -298,6 +300,10 @@ get_ticks :: proc() -> f64 {
 
 get_fps :: proc() -> string {
     return fmt.tprintf("%.0f", 1/g.dt)
+}
+
+get_text_width :: proc(font_scale, text_len: int) -> f32 {
+    return f32(font_scale) * DEFAULT_FONT_WIDTH * f32(text_len)
 }
 
 get_text_size :: proc(font_scale, text_len: int) -> Vec2 {
