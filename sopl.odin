@@ -37,11 +37,12 @@ State :: struct {
     window:                   ^sdl.Window,
     window_width:             i32,
     window_height:            i32,
+    window_scale:             f32,
     window_pixel_width:       i32,
     window_pixel_height:      i32,
     pipelines:                [Shader_Type]^sdl.GPUGraphicsPipeline,
     last_tick:                time.Tick,
-    start_tick:              time.Tick,
+    start_tick:               time.Tick,
     dt:                       f32,
     projection:               matrix[4, 4]f32,
     view_matrix:              matrix[4, 4]f32,
@@ -183,6 +184,10 @@ get_window_height :: proc() -> i32 {
     return g.window_height
 }
 
+get_window_scale :: proc() -> f32 {
+    return g.window_scale
+}
+
 update :: proc() -> bool {
 	g.pre_press = g.cur_press
     g.char_pressed = 0
@@ -208,7 +213,8 @@ update :: proc() -> bool {
             g.cur_mouse_button_press = true
 		case .MOUSE_BUTTON_UP:
             g.cur_mouse_button_press = false
-        case .WINDOW_RESIZED, .WINDOW_SHOWN:
+        case .WINDOW_RESIZED, .WINDOW_SHOWN, .WINDOW_DISPLAY_SCALE_CHANGED:
+            g.window_scale = sdl.GetWindowDisplayScale(g.window)
             sdl.GetWindowSizeInPixels(g.window, &g.window_width, &g.window_height)
 		}
 	}
@@ -334,7 +340,7 @@ get_char_pressed :: proc() -> u8 {
 }
 
 get_mouse_position :: proc() -> Vec2 {
-    scale := sdl.GetWindowDisplayScale(g.window)
+    scale := get_window_scale()
     return {(g.mouse_pos.x * scale) - g.view_matrix[3][0], (g.mouse_pos.y * scale) - g.view_matrix[3][1]}
 }
 
