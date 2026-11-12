@@ -32,56 +32,6 @@ MAX_INDICES :: BATCH_QUAD_CAPACITY * INDICES_PER_QUAD
 Vec3 :: [3]f32
 Vec2 :: [2]f32
 
-State :: struct {
-    device:                   ^sdl.GPUDevice,
-    display:                  sdl.DisplayID,
-    window:                   ^sdl.Window,
-    window_width:             i32,
-    window_height:            i32,
-    window_scale:             f32,
-    window_pixel_width:       i32,
-    window_pixel_height:      i32,
-    pipelines:                [Shader_Type]^sdl.GPUGraphicsPipeline,
-    last_tick:                time.Tick,
-    start_tick:               time.Tick,
-    dt:                       f32,
-    projection:               matrix[4, 4]f32,
-    view_matrix:              matrix[4, 4]f32,
-    pre_press:                #sparse[sdl.Scancode]bool,
-    cur_press:                #sparse[sdl.Scancode]bool,
-    cur_mouse_button_press:   bool,
-    prev_mouse_button_press:  bool,
-    mouse_pos:                Vec2,
-    char_pressed:             u8,
-    default_texture:          ^sdl.GPUTexture,
-    default_font_texture:     ^sdl.GPUTexture,
-    default_sampler:          ^sdl.GPUSampler,
-    transfer_buf:             ^sdl.GPUTransferBuffer,
-    index_buffer:             ^sdl.GPUBuffer,
-    vertex_buffer:            ^sdl.GPUBuffer,
-    clear_color:              Color,
-    target_fps:               u32,
-}
-
-Camera :: struct {
-    offset: Vec2,
-    zoom: f32,
-    rotation: f32
-}
-
-Draw_Command :: struct {
-    texture:        ^sdl.GPUTexture,
-    pipeline_type:  Shader_Type,
-    first_index:    u32,
-    index_count:    u32,
-    view_matrix:    matrix[4, 4]f32,
-}
-
-Texture :: struct {
-	width, height: u32,
-	texture:       ^sdl.GPUTexture,
-}
-
 Scancode :: sdl.Scancode
 PresentMode :: sdl.GPUPresentMode
 
@@ -114,6 +64,56 @@ BLANK      :: Color{ 0, 0, 0, 0 }
 MAGENTA    :: Color{ 255, 0, 255, 255 }
 RAYWHITE   :: Color{ 245, 245, 245, 255 }
 
+State :: struct {
+    device:                   ^sdl.GPUDevice,
+    display:                  sdl.DisplayID,
+    window:                   ^sdl.Window,
+    window_width:             i32,
+    window_height:            i32,
+    window_scale:             f32,
+    window_pixel_width:       i32,
+    window_pixel_height:      i32,
+    pipelines:                [Shader_Type]^sdl.GPUGraphicsPipeline,
+    last_tick:                time.Tick,
+    start_tick:               time.Tick,
+    dt:                       f32,
+    projection:               matrix[4, 4]f32,
+    view_matrix:              matrix[4, 4]f32,
+    pre_press:                #sparse[sdl.Scancode]bool,
+    cur_press:                #sparse[sdl.Scancode]bool,
+    cur_mouse_button_press:   bool,
+    prev_mouse_button_press:  bool,
+    mouse_pos:                Vec2,
+    char_pressed:             u8,
+    default_texture:          ^sdl.GPUTexture,
+    default_font_texture:     ^sdl.GPUTexture,
+    default_sampler:          ^sdl.GPUSampler,
+    transfer_buf:             ^sdl.GPUTransferBuffer,
+    index_buffer:             ^sdl.GPUBuffer,
+    vertex_buffer:            ^sdl.GPUBuffer,
+    clear_color:              Color,
+    target_fps:               u32,
+}
+
+Camera :: struct {
+    offset:    Vec2,
+    zoom:      f32,
+    rotation:  f32
+}
+
+Draw_Command :: struct {
+    texture:        ^sdl.GPUTexture,
+    pipeline_type:  Shader_Type,
+    first_index:    u32,
+    index_count:    u32,
+    view_matrix:    matrix[4, 4]f32,
+}
+
+Texture :: struct {
+    width, height: u32,
+    texture:       ^sdl.GPUTexture,
+}
+
 Vertex :: struct {
 	pos:   Vec3,
 	uv:    Vec2,
@@ -123,7 +123,6 @@ Vertex :: struct {
 Rect :: struct {
 	x, y, w, h: f32,
 }
-
 
 init_window :: proc(width: u32, height: u32, title: cstring, mode: sdl.WindowFlags) {
 	ensure(sdl.Init({.VIDEO}), string(sdl.GetError()))
@@ -375,6 +374,27 @@ set_camera :: proc(camera: Camera) {
 		linalg.matrix4_scale_f32({camera.zoom, camera.zoom, 1})
 }
 
+draw_texture :: proc(tex: Texture, src: Rect, dest: Rect, Color tint) {
+    model_matrix :=
+        linalg.matrix4_translate_f32(dest.x, dest.y, 0}) *
+        // linalg.matrix4_rotate_f32(camera.rotation, {0, 0, 1}) *
+        linalg.matrix4_scale_f32({dest.w, dest.h, 1})
+
+    uv_scale := Vec2{}
+    uv_offset := Vec2{glyph_index_x, glyph_index_y} * uv_scale
+
+    vertices := TEMPLATE_VERTEX
+    for &vertex in vertices {
+        vertex.color = color
+        vertex.pos = (model_matrix * [4]f32{vertex.pos.x, vertex.pos.y, vertex.pos.z, 1}).xyz
+        vertex.uv *= uv_scale
+        vertex.uv += uv_offset
+        append(&batch_vertices, vertex)
+    }
+
+    add_draw_command(6, tex, .Textured)
+}
+
 // One segment is one quad
 draw_circle :: proc(position: Vec2, r: f32, color: Color, segments := 16) {
 	model_matrix :=
@@ -540,11 +560,6 @@ load_texture :: proc(path: string) -> Texture {
 	sdl.EndGPUCopyPass(copy_pass)
 	ensure(sdl.SubmitGPUCommandBuffer(copy_cmd_buf), string(sdl.GetError()))
 	sdl.ReleaseGPUTransferBuffer(g.device, transfer_buf)
-
-	sampler := sdl.CreateGPUSampler(
-		g.device,
-		{min_filter = .NEAREST, mag_filter = .NEAREST, mipmap_mode = .NEAREST},
-	)
 
 	return {width = u32(img.width), height = u32(img.height), texture = texture}
 }
