@@ -125,7 +125,6 @@ Rect :: struct {
 
 
 init_window :: proc(width: u32, height: u32, title: cstring, mode: sdl.WindowFlags) {
-	context.logger = log.create_console_logger()
 	ensure(sdl.Init({.VIDEO}), string(sdl.GetError()))
 
 	g = new(State)
@@ -428,10 +427,10 @@ draw_rectangle :: proc(rect: Rect, color: Color, rotation: f32 = 0) {
 draw_fps :: proc(pos: Vec2) {
     fps := 1/get_delta_time()
     buf: [size_of(fps)]u8
-    draw_text(pos, fmt.bprint(buf[:], fps), 10)
+    draw_text(fmt.bprint(buf[:]), pos, 10)
 }
 
-draw_text :: proc(pos: Vec2, text: string, font_scale: u32, color := WHITE) {
+draw_text :: proc(text: string, pos: Vec2, font_scale: u32, color := WHITE) {
     font_height := f32(DEFAULT_FONT_HEIGHT * font_scale)
     font_width  := f32(DEFAULT_FONT_WIDTH * font_scale)
     bytes := transmute([]u8)text

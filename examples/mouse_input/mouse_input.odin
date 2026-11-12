@@ -38,8 +38,8 @@ main :: proc() {
 
         title := "Crazy multiplayer pong!!"
         text_pos := s.move_cursor(s.get_text_size(10, len(title)))
-        s.draw_text({text_pos.x, text_pos.y}, title, 10)
-        s.draw_text({0, 0}, fmt.tprint(ui), 10)
+        s.draw_text(title, {text_pos.x, text_pos.y}, 10)
+        s.draw_text(fmt.tprint(ui),{0, 0}, 10)
         switch ui {
         case .None:
             if s.gui_button(s.move_cursor({BUTTON_W, BUTTON_H}), "Host", BUTTON_COLOR) {
@@ -51,7 +51,7 @@ main :: proc() {
         case .Host:
             wating_text := "Wating for client"
             text_pos := s.move_cursor(s.get_text_size(5, len(wating_text)))
-            s.draw_text({text_pos.x, text_pos.y}, wating_text, 5, s.YELLOW)
+            s.draw_text(wating_text, {text_pos.x, text_pos.y}, 5, s.YELLOW)
             if s.gui_button(s.move_cursor({BUTTON_W, BUTTON_H}), "Cancel", BUTTON_COLOR) {
                 ui = .None
             }

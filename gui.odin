@@ -31,7 +31,7 @@ gui_button :: proc(rect: Rect, text: string, color: Color) -> bool {
 
     text_pos_x := rect.x + rect.w/2 - (DEFAULT_FONT_WIDTH*font_scale/2) * f32(len(text)) 
     text_pos_y := rect.y + rect.h/2 - (DEFAULT_FONT_HEIGHT*font_scale)/2
-    draw_text({text_pos_x, text_pos_y}, text, u32(font_scale), {WHITE.r, WHITE.g, WHITE.b, hover_alpha})
+    draw_text(text, {text_pos_x, text_pos_y}, u32(font_scale), {WHITE.r, WHITE.g, WHITE.b, hover_alpha})
 
     is_mouse_button_pressed() or_return
     return collided
@@ -52,7 +52,7 @@ gui_input :: proc(pos: Vec2, height: f32, text_buf: []u8) -> int {
 
     text_count := bytes.index_byte(text_buf, 0)
     if text_count == -1 do text_count = len(text_buf)
-    draw_text({pos.x, pos.y}, string(text_buf[:text_count]), font_scale)
+    draw_text(string(text_buf[:text_count]), {pos.x, pos.y}, font_scale)
 
     if !collided { stop_text_input(); return text_count}
     start_text_input()

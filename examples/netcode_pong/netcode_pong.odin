@@ -124,7 +124,7 @@ step :: proc() -> bool {
 
         title := "Crazy multiplayer pong!!"
         text_pos := s.move_cursor(s.get_text_size(10, len(title)))
-        s.draw_text({text_pos.x, text_pos.y}, title, 10)
+        s.draw_text(title, {text_pos.x, text_pos.y}, 10)
 
         if s.gui_button(s.move_cursor({BUTTON_W, BUTTON_H}), "Host", BUTTON_COLOR) {
             n.role = .Host
@@ -152,11 +152,11 @@ step :: proc() -> bool {
 
             title := "Crazy multiplayer pong!!"
             text_pos := s.move_cursor(s.get_text_size(10, len(title)))
-            s.draw_text({text_pos.x, text_pos.y}, title, 10)
+            s.draw_text(title, {text_pos.x, text_pos.y}, 10)
 
             wating_text := "Wating for client"
             text_pos = s.move_cursor(s.get_text_size(5, len(wating_text)))
-            s.draw_text({text_pos.x, text_pos.y}, wating_text, 5, s.YELLOW)
+            s.draw_text(wating_text, {text_pos.x, text_pos.y}, 5, s.YELLOW)
             if s.gui_button(s.move_cursor({BUTTON_W, BUTTON_H}), "Cancel", BUTTON_COLOR) {
                 n.role = .None
                 n.socket = 0
@@ -250,6 +250,7 @@ step :: proc() -> bool {
             s.present()
             return true
         }
+
         input_packet: Packet_Input
         if s.is_key_down(.W) do input_packet.input += {.W}
         if s.is_key_down(.S) do input_packet.input += {.S}
@@ -259,7 +260,6 @@ step :: proc() -> bool {
 
         listen_for_game_state()
     }
-
 
     scale := f32(min(w/WORLD_W, h/WORLD_H))
     world_camera := s.Camera {
@@ -271,8 +271,8 @@ step :: proc() -> bool {
 
     p1_points := s.get_text_width(FONT_SCALE, len(fmt.tprint(g.p1_points)))
 
-    s.draw_text({WORLD_W/2 - p1_points - FONT_SCALE - 5, 0}, fmt.tprint(g.p1_points), FONT_SCALE)
-    s.draw_text({WORLD_W/2 + 5, 0}, fmt.tprint(g.p2_points), FONT_SCALE)
+    s.draw_text(fmt.tprint(g.p1_points), {WORLD_W/2 - p1_points - FONT_SCALE - 5, 0}, FONT_SCALE)
+    s.draw_text(fmt.tprint(g.p2_points), {WORLD_W/2 + 5, 0}, FONT_SCALE)
 
     s.draw_rectangle({WORLD_W/2 - 0.5, 0, 1, WORLD_H}, s.WHITE)
     s.draw_rectangle(g.p1.rect, s.SKYBLUE)
