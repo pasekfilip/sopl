@@ -1,6 +1,7 @@
 package netcode_pong
 
 import "core:fmt"
+import "core:log"
 import "core:mem"
 import "core:math/rand"
 import "core:math"
@@ -30,20 +31,7 @@ FONT_SCALE    :: 2
 
 g: Packet_Game_State
 n: Network_State
-
-Network_State :: struct {
-    role:                    Network_Role,
-    socket:                  net.UDP_Socket,
-    endpoint:                net.Endpoint,
-    host_addr:               [15]u8,
-    conn_established:        bool
-}
-
-Network_Role :: enum {
-    None,
-    Host,
-    Client
-}
+buff: [15]u8
 
 Paddle :: struct {
     using rect: s.Rect,
@@ -99,14 +87,11 @@ init :: proc() {
         }
     }
 
-    s.init_window(1280, 720, "pong af", {})
+    s.init_window(1280, 720, "pong af", {.RESIZABLE})
 }
 
-/*
-Click host u are in wating queue
-Click client u get an input where u type the ip
-*/
 step :: proc() -> bool {
+	context.logger = log.create_console_logger()
     if !s.update() {
         return false
     }
@@ -117,7 +102,7 @@ step :: proc() -> bool {
     s.clear_background(s.DARKGRAY)
     s.stack_layout({f32(w/2), f32(h/2)}, GAP)
 
-    switch n.role {
+    switch s.get_network_role() {
     case .None:
         mouse_pos := s.get_mouse_position()
         s.draw_rectangle({mouse_pos.x, mouse_pos.y, 5, 5}, s.WHITE)
@@ -127,10 +112,10 @@ step :: proc() -> bool {
         s.draw_text(title, {text_pos.x, text_pos.y}, 10)
 
         if s.gui_button(s.move_cursor({BUTTON_W, BUTTON_H}), "Host", BUTTON_COLOR) {
-            n.role = .Host
+            s.set_network_role(.Host)
         }
         if s.gui_button(s.move_cursor({BUTTON_W, BUTTON_H}), "Client", BUTTON_COLOR) {
-            n.role = .Client
+            s.set_network_role(.Client)
         }
         if s.gui_button(s.move_cursor({BUTTON_W, BUTTON_H}), "Exit", BUTTON_COLOR) {
             s.close_window()
@@ -140,13 +125,7 @@ step :: proc() -> bool {
         return true
 
     case .Host:
-        if !n.conn_established {
-            if n.socket == 0 {
-                n.socket = bind_udp_socket("0.0.0.0", 9000)
-                net.set_blocking(n.socket, false)
-            }
-            listen_for_hello()
-
+        if !s.setup_host() {
             mouse_pos := s.get_mouse_position()
             s.draw_rectangle({mouse_pos.x, mouse_pos.y, 5, 5}, s.WHITE)
 
@@ -158,9 +137,8 @@ step :: proc() -> bool {
             text_pos = s.move_cursor(s.get_text_size(5, len(wating_text)))
             s.draw_text(wating_text, {text_pos.x, text_pos.y}, 5, s.YELLOW)
             if s.gui_button(s.move_cursor({BUTTON_W, BUTTON_H}), "Cancel", BUTTON_COLOR) {
-                n.role = .None
-                n.socket = 0
-                net.close(n.socket)
+                s.set_network_role(.None)
+                s.unbind_socket()
             }
 
             s.present()
@@ -230,23 +208,17 @@ step :: proc() -> bool {
         send_game_state()
 
     case .Client:
-        if !n.conn_established {
-            if n.socket == 0 {
-                n.socket, _ = net.make_unbound_udp_socket(.IP4)
-                net.set_blocking(n.socket, false)
-            }
-
+        if !s.setup_client() {
             rect := s.move_cursor({INPUT_W, INPUT_H})
-            count := s.gui_input({rect.x, rect.y}, rect.h, n.host_addr[:])
+            count := s.gui_input({rect.x, rect.y}, rect.h, buff[:])
             if s.gui_button(s.move_cursor({BUTTON_W, BUTTON_H}), "Connect", BUTTON_COLOR) {
-                send_hello_to(string(n.host_addr[:count]), 9000)
+                s.set_endpoint(buff[:count])
             }
             if s.gui_button(s.move_cursor({BUTTON_W, BUTTON_H}), "Cancel", BUTTON_COLOR) {
-                n.role = .None
-                net.close(n.socket)
+                s.set_network_role(.None)
+                s.unbind_socket()
             }
 
-            listen_for_welcome()
             s.present()
             return true
         }
@@ -311,24 +283,6 @@ listen_for_hello :: proc() {
     }
 }
 
-send_hello_to :: proc(ip: string, port: int) {
-    host_addr, ok := net.parse_ip4_address(ip)
-    if !ok {
-        fmt.println("Failed to parse IP address")
-        return
-    }
-    n.endpoint = net.Endpoint {
-        address = host_addr,
-        port    = port
-    }
-
-    buf := transmute([]u8)HELLO
-    _, err_send := net.send_udp(n.socket, buf, n.endpoint)
-    if err_send != nil {
-        fmt.println("Failed to send data", err_send)
-    }
-}
-
 listen_for_welcome :: proc() {
     buf: [len(WELCOME)]u8
     _, _, err_recv := net.recv_udp(n.socket, buf[:])
@@ -364,21 +318,4 @@ listen_for_game_state :: proc() {
 send_client_input :: proc() {
     s.is_key_down(.W)
     s.is_key_down(.S)
-}
-
-bind_udp_socket :: proc(ip: string, port: int) -> net.UDP_Socket {
-    addr, ok := net.parse_ip4_address(ip)
-    if !ok {
-        fmt.println("Failed to parse IP address")
-        return {}
-    }
-
-    sock, err := net.make_bound_udp_socket(addr, port)
-    if err != nil {
-        fmt.println("Failed to make bound UDP socket", err)
-        return {}
-    }
-
-    fmt.printfln("Listening on UDP: %s", ip, port)
-    return sock
 }
