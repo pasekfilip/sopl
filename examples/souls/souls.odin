@@ -1,7 +1,17 @@
 package platformer
 
 import "core:fmt"
+import "core:log"
 import s "../../"
+
+WORLD_W    :: 320
+WORLD_H    :: 180
+SCREEN_W   :: 1280
+SCREEN_H   :: 720
+MAX        :: 1000
+GRAVITY    :: 10
+entities:  [MAX]Entity
+p1_index:  u32
 
 Entity :: struct {
     using rect:         s.Rect,
@@ -40,12 +50,6 @@ remove_entity :: proc(entity: Entity) {
     entities[entity.index].alive = false
 }
 
-WIDTH :: 320
-HEIGHT :: 180
-MAX :: 1000
-GRAVITY :: 10
-entities: [MAX]Entity
-p1_index: u32
 
 main :: proc() {
     init()
@@ -62,8 +66,8 @@ init :: proc() {
         category = .Player,
         mask = {.Ground},
         update = proc(e: ^Entity, dt: f32) {
-            if s.is_key_down(.D) do e.x += 100 * dt
-            if s.is_key_down(.A) do e.x -= 100 * dt
+            if s.is_key_down(.D) do e.x += 300 * dt
+            if s.is_key_down(.A) do e.x -= 300 * dt
 
             if e.on_ground && s.is_key_pressed(.SPACE) {
                 e.on_ground = false
@@ -90,21 +94,23 @@ init :: proc() {
         }
     })
     add_entity({
-        rect = { x = 50, y = 150, w = 500, h = 10 },
+        rect = { x = 0, y = WORLD_H - 10, w = WORLD_W, h = 10 },
         color = s.WHITE,
         collision_offset = {0, 0},
-        collision_size = {500, 10},
+        collision_size = {WORLD_W, 10},
         category = .Ground,
         mask = {.Player},
         update = proc(e: ^Entity, dt: f32) { },
         on_collision = proc(e: ^Entity, e2: ^Entity) { }
     })
 
-    s.init_window(WIDTH, HEIGHT, "platformer", .VSYNC)
+    s.init_window(SCREEN_W, SCREEN_H, "souls", {})
 }
 
-// so we are doing update collision draw
 step :: proc() -> bool {
+    context.logger = log.create_console_logger()
+    s.update() or_return
+
     for &e in entities {
         if !e.alive do break
         e.update(&e, s.get_delta_time()) 
@@ -126,24 +132,27 @@ step :: proc() -> bool {
         }
     }
 
+    w := f32(s.get_window_width())
+    h := f32(s.get_window_height())
+
+    scale := min(w/WORLD_W, h/WORLD_H)
     p1 := entities[p1_index]
     camera := s.Camera{
-        offset = {-p1.x + WIDTH/2, -p1.y + HEIGHT/2},
-        zoom = 1
+        zoom = scale
     }
-
     s.clear_background(s.DARKGRAY)
     s.set_camera(camera)
+
+    s.draw_fps({0,0})
+
     for e in entities {
         if !e.alive do break
         s.draw_rectangle(e.rect, e.color)
         s.draw_rectangle_outline(recompute_collision_box(e), s.RED)
     }
 
-    s.draw_text({50,50,10,10}, "12346789")
     s.present()
-
-    return !s.update()
+    return true
 }
 
 end :: proc() {
@@ -166,4 +175,3 @@ apply_physics :: proc(e: ^Entity, dt: f32) {
 recompute_collision_box :: proc(e: Entity) -> s.Rect {
     return {e.x + e.collision_offset.x, e.y + e.collision_offset.y, e.collision_size.x, e.collision_size.y}
 }
-

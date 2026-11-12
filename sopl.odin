@@ -1,6 +1,7 @@
 package sopl
 
 import "core:fmt"
+import "core:math"
 import "core:image"
 import _ "core:image/png"
 import "core:log"
@@ -246,6 +247,9 @@ present :: proc() {
 
 	if swapchain_tex == nil { 	// the window is minimaized (wayland not rly)
 		ensure(sdl.SubmitGPUCommandBuffer(cmd_buf), string(sdl.GetError()))
+        clear(&draw_commands)
+        clear(&batch_vertices)
+        free_all(context.temp_allocator)
 	}
 
 	color_target := sdl.GPUColorTargetInfo {
@@ -287,6 +291,7 @@ present :: proc() {
 	ensure(sdl.SubmitGPUCommandBuffer(cmd_buf), string(sdl.GetError()))
     clear(&draw_commands)
     clear(&batch_vertices)
+    free_all(context.temp_allocator)
 
     if g.target_fps > 0 {
         target_sec := 1/f64(g.target_fps)
@@ -425,9 +430,7 @@ draw_rectangle :: proc(rect: Rect, color: Color, rotation: f32 = 0) {
 }
 
 draw_fps :: proc(pos: Vec2) {
-    fps := 1/get_delta_time()
-    buf: [size_of(fps)]u8
-    draw_text(fmt.bprint(buf[:]), pos, 10)
+    draw_text(get_fps(), pos, 2)
 }
 
 draw_text :: proc(text: string, pos: Vec2, font_scale: u32, color := WHITE) {
