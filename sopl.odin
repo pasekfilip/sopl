@@ -110,7 +110,7 @@ Draw_Command :: struct {
 }
 
 Texture :: struct {
-    width, height: u32,
+    w, h: u32,
     texture:       ^sdl.GPUTexture,
 }
 
@@ -374,25 +374,29 @@ set_camera :: proc(camera: Camera) {
 		linalg.matrix4_scale_f32({camera.zoom, camera.zoom, 1})
 }
 
-draw_texture :: proc(tex: Texture, src: Rect, dest: Rect, Color tint) {
+draw_texture :: proc(tex: Texture, src: Rect, pos: Vec2, tint: Color) {
     model_matrix :=
-        linalg.matrix4_translate_f32(dest.x, dest.y, 0}) *
-        // linalg.matrix4_rotate_f32(camera.rotation, {0, 0, 1}) *
-        linalg.matrix4_scale_f32({dest.w, dest.h, 1})
+        linalg.matrix4_translate_f32({pos.x, pos.y, 0}) *
+        linalg.matrix4_scale_f32({src.w, src.h, 1})
 
-    uv_scale := Vec2{}
-    uv_offset := Vec2{glyph_index_x, glyph_index_y} * uv_scale
+    /*
+        what im getting in w and h im getting img width / frames 
+        that means that im getting single size of the image
+
+        i have the single size of the image ok
+        so if i say single image size/whole image size i should get the thing i want prop
+    */
 
     vertices := TEMPLATE_VERTEX
     for &vertex in vertices {
-        vertex.color = color
+        vertex.color = tint
         vertex.pos = (model_matrix * [4]f32{vertex.pos.x, vertex.pos.y, vertex.pos.z, 1}).xyz
-        vertex.uv *= uv_scale
-        vertex.uv += uv_offset
+        vertex.uv *= {src.w/f32(tex.w), src.h/f32(tex.h)}
+        vertex.uv += {src.x, src.y}
         append(&batch_vertices, vertex)
     }
 
-    add_draw_command(6, tex, .Textured)
+    add_draw_command(6, tex.texture, .Textured)
 }
 
 // One segment is one quad
@@ -561,7 +565,7 @@ load_texture :: proc(path: string) -> Texture {
 	ensure(sdl.SubmitGPUCommandBuffer(copy_cmd_buf), string(sdl.GetError()))
 	sdl.ReleaseGPUTransferBuffer(g.device, transfer_buf)
 
-	return {width = u32(img.width), height = u32(img.height), texture = texture}
+	return {w = u32(img.width), h = u32(img.height), texture = texture}
 }
 
 AABB :: struct {
