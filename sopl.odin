@@ -110,8 +110,8 @@ Draw_Command :: struct {
 }
 
 Texture :: struct {
-    w, h: u32,
-    texture:       ^sdl.GPUTexture,
+    w, h:    u16,
+    texture: ^sdl.GPUTexture,
 }
 
 Vertex :: struct {
@@ -374,25 +374,25 @@ set_camera :: proc(camera: Camera) {
 		linalg.matrix4_scale_f32({camera.zoom, camera.zoom, 1})
 }
 
-draw_texture :: proc(tex: Texture, src: Rect, pos: Vec2, tint: Color) {
+/*
+    tex: Texture handle plus metadata
+    src: Rectangle from the texture that gives single frame
+    dest: Rectangle where we draw the texture
+    pivot: move the 0,0(origin) to differente place in the frame
+*/
+draw_texture :: proc(tex: Texture, src, dest: Rect, pivot := Vec2{0, 0}, tint := WHITE) {
+    assert(tex.texture != nil, "Texture is not set")
     model_matrix :=
-        linalg.matrix4_translate_f32({pos.x, pos.y, 0}) *
-        linalg.matrix4_scale_f32({src.w, src.h, 1})
-
-    /*
-        what im getting in w and h im getting img width / frames 
-        that means that im getting single size of the image
-
-        i have the single size of the image ok
-        so if i say single image size/whole image size i should get the thing i want prop
-    */
+        linalg.matrix4_translate_f32({dest.x, dest.y, 0}) *
+        linalg.matrix4_translate_f32({-pivot.x, -pivot.y, 0}) *
+        linalg.matrix4_scale_f32({dest.w, dest.h, 1})
 
     vertices := TEMPLATE_VERTEX
     for &vertex in vertices {
         vertex.color = tint
         vertex.pos = (model_matrix * [4]f32{vertex.pos.x, vertex.pos.y, vertex.pos.z, 1}).xyz
         vertex.uv *= {src.w/f32(tex.w), src.h/f32(tex.h)}
-        vertex.uv += {src.x, src.y}
+        vertex.uv += {src.x/f32(tex.w), src.y/f32(tex.h)}
         append(&batch_vertices, vertex)
     }
 
@@ -565,7 +565,7 @@ load_texture :: proc(path: string) -> Texture {
 	ensure(sdl.SubmitGPUCommandBuffer(copy_cmd_buf), string(sdl.GetError()))
 	sdl.ReleaseGPUTransferBuffer(g.device, transfer_buf)
 
-	return {w = u32(img.width), h = u32(img.height), texture = texture}
+	return {w = u16(img.width), h = u16(img.height), texture = texture}
 }
 
 AABB :: struct {
