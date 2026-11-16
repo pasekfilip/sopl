@@ -9,7 +9,7 @@ WORLD_W    :: 320
 WORLD_H    :: 180
 SCREEN_W   :: 1280
 SCREEN_H   :: 720
-GRAVITY    :: 10
+GRAVITY    :: 300
 MAX        :: 1000
 
 E_Handle :: u32
@@ -93,6 +93,7 @@ main :: proc() {
 
 init :: proc() {
     s.init_window(SCREEN_W, SCREEN_H, "souls", {})
+    s.set_fps(30)
 
     idle := s.load_texture("./Player Idle 48x48.png")
     clips[.Idle] = {
@@ -128,7 +129,7 @@ init :: proc() {
 
             if e.on_ground && s.is_key_pressed(.SPACE) {
                 e.on_ground = false
-                e.velocity.y -= 300
+                e.velocity.y -= 200
             }
         },
         on_collision = proc(e: ^Entity, e2: ^Entity) {
@@ -184,7 +185,7 @@ step :: proc() -> bool {
             if collided {
                 e.on_collision(&e, &e2)
                 PUSH_BACK_VEL :: 10
-                e.velocity.y -= overflow.y * PUSH_BACK_VEL
+                e.velocity.y -= overflow.y * PUSH_BACK_VEL * s.get_delta_time()
             }
         }
     }
@@ -240,15 +241,15 @@ end :: proc() {
 }
 
 apply_physics :: proc(e: ^Entity, dt: f32) {
-	if !e.on_ground do e.velocity.y += GRAVITY
-	if abs(e.velocity.x) > 0 {
-		e.velocity.x *= 0.9
-	}
-	if abs(e.velocity.x) < 10 {
-		e.velocity.x = 0
-	}
+	if !e.on_ground do e.velocity.y += GRAVITY * dt
+	// if abs(e.velocity.x) > 0 {
+	// 	e.velocity.x *= 0.9
+	// }
+	// if abs(e.velocity.x) < 10 {
+	// 	e.velocity.x = 0
+	// }
 
-	e.x += e.velocity.x * dt
+	// e.x += e.velocity.x * dt
 	e.y += e.velocity.y * dt
 }
 
