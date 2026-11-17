@@ -63,7 +63,7 @@ FONT_SCALE	examples/netcode_pong/netcode_pong.odin	/^FONT_SCALE    :: 2$/;"	c
 GAP	examples/mouse_input/mouse_input.odin	/^GAP           :: 20$/;"	c
 GAP	examples/netcode_pong/netcode_pong.odin	/^GAP           :: 20$/;"	c
 GOLD	sopl.odin	/^GOLD       :: Color{ 255, 203, 0, 255 }$/;"	c
-GRAVITY	examples/souls/souls.odin	/^GRAVITY    :: 10$/;"	c
+GRAVITY	examples/souls/souls.odin	/^GRAVITY    :: 500$/;"	c
 GRAY	sopl.odin	/^GRAY       :: Color{ 130, 130, 130, 255 }$/;"	c
 GREEN	sopl.odin	/^GREEN      :: Color{ 0, 228, 48, 255 }$/;"	c
 Game_State	examples/souls/souls.odin	/^Game_State :: struct {$/;"	t
@@ -106,9 +106,7 @@ RED	sopl.odin	/^RED        :: Color{ 230, 41, 55, 255 }$/;"	c
 Rect	examples/mouse_input/mouse_input.odin	/^Rect :: s.Rect$/;"	c
 Rect	examples/souls/souls.odin	/^Rect :: s.Rect$/;"	c
 Rect	sopl.odin	/^Rect :: struct {$/;"	t
-SCREEN_H	examples/delta_time/delta_time.odin	/^SCREEN_H   :: 720$/;"	c
 SCREEN_H	examples/souls/souls.odin	/^SCREEN_H   :: 720$/;"	c
-SCREEN_W	examples/delta_time/delta_time.odin	/^SCREEN_W   :: 1280$/;"	c
 SCREEN_W	examples/souls/souls.odin	/^SCREEN_W   :: 1280$/;"	c
 SKYBLUE	sopl.odin	/^SKYBLUE    :: Color{ 102, 191, 255, 255 }$/;"	c
 Scancode	sopl.odin	/^Scancode :: sdl.Scancode$/;"	c
@@ -118,6 +116,7 @@ State	sopl.odin	/^State :: struct {$/;"	t
 TEMPLATE_VERTEX	sopl.odin	/^TEMPLATE_VERTEX: [4]Vertex : {$/;"	c
 Texture	sopl.odin	/^Texture :: struct {$/;"	t
 Transition	examples/local_coop_greed_defense/game.odin	/^Transition :: struct {$/;"	t
+Transition	examples/souls/souls.odin	/^Transition :: struct {$/;"	t
 UI	examples/mouse_input/mouse_input.odin	/^UI :: enum {$/;"	t
 VIOLET	sopl.odin	/^VIOLET     :: Color{ 135, 60, 190, 255 }$/;"	c
 Vec2	examples/mouse_input/mouse_input.odin	/^Vec2 :: s.Vec2$/;"	c
@@ -129,10 +128,8 @@ Visual	examples/local_coop_greed_defense/game.odin	/^Visual :: union {$/;"	t
 WELCOME	examples/netcode_pong/netcode_pong.odin	/^WELCOME  :: string("welcome")$/;"	c
 WELCOME	netcode.odin	/^WELCOME            :: string("welcome")$/;"	c
 WHITE	sopl.odin	/^WHITE      :: Color{ 255, 255, 255, 255 }$/;"	c
-WORLD_H	examples/delta_time/delta_time.odin	/^WORLD_H    :: 180$/;"	c
 WORLD_H	examples/netcode_pong/netcode_pong.odin	/^WORLD_H :: 180$/;"	c
 WORLD_H	examples/souls/souls.odin	/^WORLD_H    :: 180$/;"	c
-WORLD_W	examples/delta_time/delta_time.odin	/^WORLD_W    :: 320$/;"	c
 WORLD_W	examples/netcode_pong/netcode_pong.odin	/^WORLD_W :: 320$/;"	c
 WORLD_W	examples/souls/souls.odin	/^WORLD_W    :: 320$/;"	c
 YELLOW	sopl.odin	/^YELLOW     :: Color{ 253, 249, 0, 255 }$/;"	c
@@ -184,12 +181,13 @@ get_window_width	sopl.odin	/^get_window_width :: proc() -> i32 {$/;"	p
 gravity	examples/local_coop_greed_defense/game.odin	/^gravity: f32 = 250$/;"	v
 gui_button	gui.odin	/^gui_button :: proc(rect: Rect, text: string, color: Color) -> bool {$/;"	p
 gui_input	gui.odin	/^gui_input :: proc(pos: Vec2, height: f32, text_buf: []u8) -> int {$/;"	p
+height	examples/delta_time/delta_time.odin	/^	height :: 1080$/;"	c
 hide_cursor	sopl.odin	/^hide_cursor :: proc() -> bool {$/;"	p
 init	examples/netcode_pong/netcode_pong.odin	/^init :: proc() {$/;"	p
 init	examples/souls/souls.odin	/^init :: proc() {$/;"	p
 init_window	sopl.odin	/^init_window :: proc(width: u32, height: u32, title: cstring, mode: sdl.WindowFlags) {$/;"	p
 ip_addr	examples/mouse_input/mouse_input.odin	/^ip_addr: [15]u8$/;"	v
-is_culled	examples/delta_time/delta_time.odin	/^		is_culled :: proc(x: f32) -> bool {return x >= WORLD_W}$/;"	p
+is_culled	examples/delta_time/delta_time.odin	/^		is_culled :: proc(x: f32) -> bool {return x >= width}$/;"	p
 is_key_down	sopl.odin	/^is_key_down :: proc(code: Scancode) -> bool {$/;"	p
 is_key_pressed	sopl.odin	/^is_key_pressed :: proc(code: Scancode) -> bool {$/;"	p
 is_mouse_button_down	sopl.odin	/^is_mouse_button_down :: proc() -> bool {$/;"	p
@@ -248,3 +246,4 @@ unbind_socket	netcode.odin	/^unbind_socket :: proc() {$/;"	p
 update	sopl.odin	/^update :: proc() -> bool {$/;"	p
 update_player	examples/local_coop_greed_defense/game.odin	/^	update_player :: proc(e: ^Entity, input: bit_set[Keys], dt: f32) {$/;"	p
 upload_gpu_texture	gpu.odin	/^upload_gpu_texture :: proc(width, height: u32, img: []byte) -> ^sdl.GPUTexture {$/;"	p
+width	examples/delta_time/delta_time.odin	/^	width :: 1920$/;"	c

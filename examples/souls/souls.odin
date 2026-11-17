@@ -9,7 +9,7 @@ WORLD_W    :: 320
 WORLD_H    :: 180
 SCREEN_W   :: 1280
 SCREEN_H   :: 720
-GRAVITY    :: 300
+GRAVITY    :: 500
 MAX        :: 1000
 
 E_Handle :: u32
@@ -39,7 +39,8 @@ Entity :: struct {
     mask:              bit_set[Layer],
     on_ground:         bool,
     index:             E_Handle,
-    alive:             bool
+    alive:             bool,
+    flipped:           bool,
 }
 
 /* 
@@ -51,8 +52,14 @@ Clip :: struct {
     frame_count:  u16,
     frame_w:      u16,
     frame_h:      u16,
-    duration:    f32,
-    pivot:        Vec2
+    duration:     f32,
+    pivot:        Vec2,
+    transitions:  [4]Transition
+}
+
+Transition :: struct {
+	to:        Animation,
+	condition: proc(e: Entity) -> bool,
 }
 
 Animation :: enum {
@@ -93,7 +100,68 @@ main :: proc() {
 
 init :: proc() {
     s.init_window(SCREEN_W, SCREEN_H, "souls", {})
-    s.set_fps(30)
+
+    idle_transitions := [4]Transition {
+        0 = {
+            to = .Walk,
+            condition = proc(e: Entity) -> bool {
+                if s.is_key_down(.D) || s.is_key_down(.A) {
+                    return true
+                }
+                return false
+            }
+        },
+        1 = {
+            to = .Jump,
+            condition = proc(e: Entity) -> bool {
+                if e.on_ground do return false
+                return true
+            }
+        }
+    }
+
+    walk_transitions := [4]Transition {
+        0 = {
+            to = .Idle,
+            condition = proc(e: Entity) -> bool {
+                if s.is_key_down(.D) || s.is_key_down(.A) do return false
+                return true
+            }
+        },
+        1 = {
+            to = .Jump,
+            condition = proc(e: Entity) -> bool {
+                if e.on_ground do return false
+                return true
+            }
+        },
+        2 = {
+            to = .Attack,
+            condition = proc(e: Entity) -> bool {
+                if s.is_key_down(.J) do return true
+                return false
+            }
+        }
+    }
+
+    jump_transitions := [4]Transition {
+        0 = {
+            to = .Idle,
+            condition = proc(e: Entity) -> bool {
+                if e.on_ground do return true
+                return false
+            }
+        }
+    }
+
+    attack_transition := [4]Transition {
+        0 = {
+            to = .Idle,
+            condition = proc(e: Entity) -> bool {
+                return false
+            }
+        }
+    }
 
     idle := s.load_texture("./Player Idle 48x48.png")
     clips[.Idle] = {
@@ -102,7 +170,8 @@ init :: proc() {
         frame_w = idle.w/10,
         frame_h = idle.h,
         duration = 0.1,
-        pivot = Vec2{f32(idle.w/(10*2)), f32(idle.h)*(5/6.)}
+        pivot = Vec2{f32(idle.w/(10*2)), f32(idle.h)*(5/6.)},
+        transitions = idle_transitions
     }
 
     walk := s.load_texture("./PlayerWalk 48x48.png")
@@ -112,7 +181,30 @@ init :: proc() {
         frame_w = walk.w/8,
         frame_h = walk.h,
         duration = 0.1,
-        pivot = Vec2{f32(idle.w/(8*2)), f32(idle.h)*(5/6.)}
+        pivot = Vec2{f32(walk.w/(8*2)), f32(walk.h)*(5/6.)},
+        transitions = walk_transitions
+    }
+
+    jump := s.load_texture("./player new jump 48x48.png")
+    clips[.Jump] = {
+        tex = jump,
+        frame_count = 6,
+        frame_w = jump.w/6,
+        frame_h = jump.h,
+        duration = 0.1,
+        pivot = Vec2{f32(jump.w/(6*2)), f32(jump.h)*(5/6.)},
+        transitions = jump_transitions
+    }
+
+    attack := s.load_texture("./player sword atk 64x64.png")
+    clips[.Attack] = {
+        tex = attack,
+        frame_count = 6,
+        frame_w = attack.w/6,
+        frame_h = attack.h,
+        duration = 0.1,
+        pivot = Vec2{f32(attack.w/(6*2)), f32(attack.h)*(3/4.)},
+        transitions = attack_transition
     }
 
     g.p1_index = add_entity({
@@ -124,8 +216,14 @@ init :: proc() {
         mask = {.Ground},
         clip = clips[.Idle],
         update = proc(e: ^Entity, dt: f32) {
-            if s.is_key_down(.D) do e.x += 200 * dt
-            if s.is_key_down(.A) do e.x -= 200 * dt
+            if s.is_key_down(.D) { 
+                e.x += 200 * dt
+                e.flipped = false
+            }
+            if s.is_key_down(.A) {
+                e.x -= 200 * dt
+                e.flipped = true
+            }
 
             if e.on_ground && s.is_key_pressed(.SPACE) {
                 e.on_ground = false
@@ -198,7 +296,17 @@ step :: proc() -> bool {
         #partial switch e.category  {
         case .Player:
             e.elapsed += s.get_delta_time()
-            if (e.elapsed >= e.clip.duration) {
+            e.w = f32(e.clip.frame_w)
+            e.h = f32(e.clip.frame_h)
+            for tran in e.clip.transitions {
+                if tran.condition == nil do break
+                if tran.condition(e) {
+                    e.clip = clips[tran.to]
+                    e.elapsed = 0
+                    e.frame = 0
+                }
+            }
+            if e.elapsed >= e.clip.duration {
                 e.frame += 1
                 e.elapsed = 0
                 if e.frame > e.clip.frame_count -1 do e.frame = 0
@@ -224,12 +332,13 @@ step :: proc() -> bool {
         e.alive or_break
         #partial switch e.category  {
         case .Player:
-            frame_rec := Rect{f32(e.clip.frame_w * e.frame), 0, f32(e.clip.frame_w), f32(e.clip.frame_h)}
+            flip: f32 = e.flipped ? -1 : 1
+            frame_rec := Rect{f32(e.clip.frame_w * e.frame), 0, f32(e.clip.frame_w) * flip, f32(e.clip.frame_h)}
             s.draw_texture(e.clip.tex, frame_rec, e.rect, e.clip.pivot)
         case .Ground:
             s.draw_rectangle(e.rect, e.color)
         }
-        s.draw_rectangle_outline(recompute_collision_box(e), s.RED)
+        // s.draw_rectangle_outline(recompute_collision_box(e), s.RED)
     }
 
     s.present()
