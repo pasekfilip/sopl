@@ -25,7 +25,7 @@ Game_State :: struct {
 }
 
 Entity :: struct {
-    using              rect:        s.Rect,
+    using rect:        s.Rect,
     collision_offset:  [2]f32,
     collision_size:    [2]f32,
     velocity:          [2]f32,
@@ -48,13 +48,16 @@ Clip should be frames of single animation e.g Attack
 i think that it should prop be some src rectangle
 */
 Clip :: struct {
-    tex:          s.Texture,
     frame_count:  u16,
     frame_w:      u16,
     frame_h:      u16,
     duration:     f32,
     pivot:        Vec2,
     transitions:  [4]Transition
+}
+
+Sprite_Sheet :: struct {
+    texure: s.Texture,
 }
 
 Transition :: struct {
@@ -162,6 +165,12 @@ init :: proc() {
             }
         }
     }
+
+    maybe i could split this function into multiple
+    coz i kinda solved the enum beeing generic but not the sprite_sheet
+    but the sprite sheet should kinda help me call draw_texture
+
+    parse_sprite_sheet("./player.png", "./player.json", Animation)
 
     idle := s.load_texture("./Player Idle 48x48.png")
     clips[.Idle] = {
